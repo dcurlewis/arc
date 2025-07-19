@@ -47,6 +47,13 @@ def test_config() -> Dict[str, Any]:
                 'Obi-Wan': 'Obi-Wan Kenobi',  # Never abbreviate Jedi names
                 'Vader': 'Darth Vader'
             }
+        },
+        'enhanced_entity_extractor': {
+            'config_path': './config/enhanced_entity_config.template.yaml'
+        },
+        'enhanced_embeddings': {
+            'model_name': 'sentence-transformers/all-MiniLM-L6-v2',
+            'collections': ['documents', 'entities', 'relationships', 'hybrid']
         }
     }
 
@@ -360,6 +367,84 @@ def cleanup_test_data():
 
 
 # Pytest hooks for better test organization
+@pytest.fixture
+def mock_enhanced_entity_extractor():
+    """Provide a mock enhanced entity extractor for testing."""
+    mock_extractor = Mock()
+    mock_extractor.extract_entities_and_relationships.return_value = (
+        [  # entities
+            {'text': 'Luke Skywalker', 'label': 'PERSON', 'canonical_name': 'Luke Skywalker'},
+            {'text': 'Jedi Order', 'label': 'ORG', 'canonical_name': 'Jedi Order'}
+        ],
+        [  # relationships
+            {'source': 'Luke Skywalker', 'target': 'Jedi Order', 'type': 'MEMBER_OF'}
+        ]
+    )
+    return mock_extractor
+
+
+@pytest.fixture
+def mock_enhanced_embeddings():
+    """Provide mock enhanced embedding system for testing."""
+    mock_generator = Mock()
+    mock_query_interface = Mock()
+    
+    # Mock search results
+    mock_query_interface.hybrid_search.return_value = {
+        'results': [
+            {
+                'content': 'Test document content',
+                'metadata': {'title': 'Test Doc', 'file_path': '/test.md'},
+                'confidence': 0.95
+            }
+        ],
+        'summary': {'total_results': 1, 'search_types': ['documents']}
+    }
+    
+    mock_query_interface.entity_centric_search.return_value = {
+        'entity_matches': [{'text': 'Luke Skywalker', 'type': 'PERSON'}],
+        'related_documents': [],
+        'related_entities': []
+    }
+    
+    return mock_generator, mock_query_interface
+
+
+@pytest.fixture
+def temp_enhanced_config():
+    """Create a temporary enhanced entity configuration for testing."""
+    config_data = {
+        'spacy_model': 'en_core_web_sm',
+        'entity_patterns': {
+            'MEETING': [
+                {'label': 'MEETING', 'pattern': [{'LOWER': 'meeting'}]}
+            ]
+        },
+        'disambiguation_rules': {
+            'people': {'luke': 'Luke Skywalker'},
+            'organizations': {'jedi': 'Jedi Order'}
+        },
+        'aliases': {
+            'Luke Skywalker': ['Luke', 'Skywalker']
+        },
+        'confidence_thresholds': {
+            'min_confidence': 0.7,
+            'high_confidence': 0.9
+        }
+    }
+    
+    import tempfile
+    import yaml
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config_data, f)
+        yield f.name
+    
+    # Cleanup
+    from pathlib import Path
+    Path(f.name).unlink(missing_ok=True)
+
+
 def pytest_configure(config):
     """Configure pytest with custom settings."""
     config.addinivalue_line(
@@ -370,6 +455,9 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "slow: mark test as slow running"
+    )
+    config.addinivalue_line(
+        "markers", "enhanced: mark test as testing enhanced functionality"
     )
 
 

@@ -406,10 +406,14 @@ class ARCImporter:
         self.graph_manager = GraphManager(self.db_manager)
         self.vector_manager = VectorManager(self.db_manager)
         
+        # Initialize enhanced embedding system
+        from enhanced_embeddings import create_enhanced_embedding_system
+        self.embedding_generator, self.query_interface = create_enhanced_embedding_system(self.db_manager)
+        
         # Initialize constraints
         self.graph_manager.create_constraints()
         
-        logger.info("Initialized ARCImporter with enhanced entity extraction")
+        logger.info("Initialized ARCImporter with enhanced entity extraction and embeddings")
     
     def _load_enhanced_config(self) -> Dict[str, Any]:
         """Load enhanced entity extraction configuration."""
@@ -516,8 +520,13 @@ class ARCImporter:
             # Link entities to document
             self.graph_manager.link_entities_to_document(entity_ids, doc_id)
             
-            # Index in vector store
+            # Index in vector store (basic)
             self.vector_manager.index_document(metadata)
+            
+            # Index with enhanced embeddings
+            self.embedding_generator.index_enhanced_document(
+                metadata['content'], entities, relationships, metadata
+            )
             
             result = {
                 'entities_count': len(entities),

@@ -1,0 +1,47 @@
+{
+  "mcpServers": {
+    "arc": {
+      "command": "python",
+      "args": [
+        "/Users/dbdave/work/arc/tools/arc_mcp_server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/Users/dbdave/work/arc/tools:/Users/dbdave/work/arc",
+        "ARC_CONFIG_PATH": "/Users/dbdave/work/arc/.env"
+      },
+      "alwaysAllow": [
+        "search_entities",
+        "semantic_search", 
+        "enhanced_hybrid_search",
+        "get_entity_relationships",
+        "find_connection_path",
+        "entity_context_search",
+        "entity_centric_search",
+        "relationship_search",
+        "temporal_search",
+        "enhanced_temporal_search",
+        "meeting_preparation",
+        "get_document"
+      ]
+    }
+  },
+  "customInstructions": "You have access to the ARC (Augmented Recall & Context) system - a sophisticated knowledge management platform with 12 specialized tools for accessing organizational memory through graph databases and enhanced AI search. Always leverage multiple complementary tools to provide comprehensive, well-sourced responses that demonstrate the rich interconnected knowledge available in the system.",
+  "globalShortcuts": {
+    "arc_search": {
+      "key": "cmd+shift+a",
+      "prompt": "Search the ARC knowledge base: "
+    },
+    "arc_entity": {
+      "key": "cmd+shift+e", 
+      "prompt": "Find entity information in ARC: "
+    },
+    "arc_meeting": {
+      "key": "cmd+shift+m",
+      "prompt": "Prepare meeting context using ARC for: "
+    },
+    "arc_relationships": {
+      "key": "cmd+shift+r",
+      "prompt": "Explore relationships in ARC between: "
+    }
+  }
+} 

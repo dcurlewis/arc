@@ -33,6 +33,7 @@ from mcp.types import (
 import mcp.server.stdio
 
 from arc_core import get_config, get_db_manager
+from enhanced_embeddings import create_enhanced_embedding_system
 
 
 # Configure logging
@@ -42,8 +43,9 @@ logger = logging.getLogger("arc-mcp-server")
 # Initialize server
 server = Server("arc-knowledge-graph")
 
-# Global database manager (initialized in main)
+# Global database manager and enhanced embeddings (initialized in main)
 db_manager = None
+enhanced_query_interface = None
 
 
 @server.list_resources()
@@ -354,6 +356,122 @@ async def list_tools() -> List[Tool]:
                 },
                 "required": ["attendees"]
             }
+        ),
+        
+        # Enhanced Embedding Tools
+        Tool(
+            name="enhanced_hybrid_search",
+            description="Advanced search using enhanced embeddings across documents, entities, and relationships",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Natural language search query"
+                    },
+                    "search_types": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["documents", "entities", "relationships", "hybrid"]},
+                        "description": "Types of search to perform (default: all types)"
+                    },
+                    "filters": {
+                        "type": "object",
+                        "description": "Optional metadata filters for refined search"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results (default: 10)",
+                        "default": 10
+                    }
+                },
+                "required": ["query"]
+            }
+        ),
+        
+        Tool(
+            name="entity_centric_search",
+            description="Search for documents and information related to a specific entity using enhanced embeddings",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entity_name": {
+                        "type": "string",
+                        "description": "Name of the entity to search for"
+                    },
+                    "entity_type": {
+                        "type": "string",
+                        "description": "Optional: Type of entity (PERSON, ORG, etc.)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results (default: 10)",
+                        "default": 10
+                    }
+                },
+                "required": ["entity_name"]
+            }
+        ),
+        
+        Tool(
+            name="relationship_search",
+            description="Search for relationships between entities using enhanced embeddings",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "source_entity": {
+                        "type": "string",
+                        "description": "Source entity name"
+                    },
+                    "target_entity": {
+                        "type": "string",
+                        "description": "Optional: Target entity name"
+                    },
+                    "relationship_type": {
+                        "type": "string",
+                        "description": "Optional: Type of relationship to filter by"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results (default: 10)",
+                        "default": 10
+                    }
+                },
+                "required": ["source_entity"]
+            }
+        ),
+        
+        Tool(
+            name="enhanced_temporal_search",
+            description="Advanced temporal search with enhanced embeddings and date filtering",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query"
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD format)"
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD format)"
+                    },
+                    "search_type": {
+                        "type": "string",
+                        "enum": ["documents", "hybrid"],
+                        "description": "Type of search to perform (default: documents)",
+                        "default": "documents"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results (default: 10)",
+                        "default": 10
+                    }
+                },
+                "required": ["query"]
+            }
         )
     ]
 
@@ -384,6 +502,14 @@ async def call_tool(name: str, arguments: dict) -> List[Union[TextContent, Image
             return await _temporal_search(args)
         elif tool_name == "meeting_preparation":
             return await _meeting_preparation(args)
+        elif tool_name == "enhanced_hybrid_search":
+            return await _enhanced_hybrid_search(args)
+        elif tool_name == "entity_centric_search":
+            return await _enhanced_entity_centric_search(args)
+        elif tool_name == "relationship_search":
+            return await _enhanced_relationship_search(args)
+        elif tool_name == "enhanced_temporal_search":
+            return await _enhanced_temporal_search(args)
         else:
             raise ValueError(f"Unknown tool: {tool_name}")
             
@@ -824,15 +950,232 @@ async def _meeting_preparation(args: Dict[str, Any]) -> List[TextContent]:
     return [TextContent(type="text", text=context_text)]
 
 
+# Enhanced Embedding Tool Handlers
+
+async def _enhanced_hybrid_search(args: Dict[str, Any]) -> List[TextContent]:
+    """Perform enhanced hybrid search across multiple embedding types."""
+    query = args["query"]
+    search_types = args.get("search_types", ["documents", "entities", "relationships"])
+    filters = args.get("filters", {})
+    limit = args.get("limit", 10)
+    
+    try:
+        if enhanced_query_interface is None:
+            return [TextContent(type="text", text="Enhanced query interface not initialized")]
+        
+        results = enhanced_query_interface.hybrid_search(
+            query=query,
+            search_types=search_types,
+            filters=filters,
+            limit=limit
+        )
+        
+        if not results:
+            return [TextContent(type="text", text=f"No results found for hybrid search: '{query}'")]
+        
+        search_text = f"**Enhanced Hybrid Search Results for:** {query}\n\n"
+        search_text += f"*Search Types:* {', '.join(search_types)}\n"
+        search_text += f"*Results Found:* {len(results)}\n\n"
+        
+        for i, result in enumerate(results):
+            search_text += f"**Result {i + 1}** ({result['search_type']}, Score: {result['score']:.3f})\n"
+            
+            # Add metadata context
+            metadata = result.get('metadata', {})
+            if metadata.get('file_name'):
+                search_text += f"*Source:* {metadata['file_name']}\n"
+            
+            if metadata.get('entity_text'):
+                search_text += f"*Entity:* {metadata['entity_text']} ({metadata.get('entity_label', 'Unknown')})\n"
+            
+            if metadata.get('relationship_type'):
+                search_text += f"*Relationship:* {metadata['source_entity']} {metadata['relationship_type']} {metadata['target_entity']}\n"
+            
+            # Content preview
+            content = result['content']
+            if len(content) > 300:
+                content = content[:300] + "..."
+            search_text += f"{content}\n\n"
+            search_text += "---\n\n"
+        
+        return [TextContent(type="text", text=search_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"Enhanced hybrid search error: {str(e)}")]
+
+
+async def _enhanced_entity_centric_search(args: Dict[str, Any]) -> List[TextContent]:
+    """Search for documents related to a specific entity using enhanced embeddings."""
+    entity_name = args["entity_name"]
+    entity_type = args.get("entity_type")
+    limit = args.get("limit", 10)
+    
+    try:
+        if enhanced_query_interface is None:
+            return [TextContent(type="text", text="Enhanced query interface not initialized")]
+        
+        results = enhanced_query_interface.entity_centric_search(
+            entity_name=entity_name,
+            entity_type=entity_type,
+            limit=limit
+        )
+        
+        if not results:
+            return [TextContent(type="text", text=f"No results found for entity: '{entity_name}'")]
+        
+        search_text = f"**Enhanced Entity-Centric Search for:** {entity_name}\n\n"
+        if entity_type:
+            search_text += f"*Entity Type:* {entity_type}\n"
+        search_text += f"*Results Found:* {len(results)}\n\n"
+        
+        for i, result in enumerate(results):
+            search_text += f"**Result {i + 1}** (Score: {result['score']:.3f})\n"
+            
+            metadata = result.get('metadata', {})
+            if metadata.get('file_name'):
+                search_text += f"*Source:* {metadata['file_name']}\n"
+            
+            if metadata.get('entity_canonical'):
+                search_text += f"*Canonical Name:* {metadata['entity_canonical']}\n"
+            
+            content = result['content']
+            if len(content) > 400:
+                content = content[:400] + "..."
+            search_text += f"{content}\n\n"
+            search_text += "---\n\n"
+        
+        return [TextContent(type="text", text=search_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"Enhanced entity search error: {str(e)}")]
+
+
+async def _enhanced_relationship_search(args: Dict[str, Any]) -> List[TextContent]:
+    """Search for relationships between entities using enhanced embeddings."""
+    source_entity = args["source_entity"]
+    target_entity = args.get("target_entity")
+    relationship_type = args.get("relationship_type")
+    limit = args.get("limit", 10)
+    
+    try:
+        if enhanced_query_interface is None:
+            return [TextContent(type="text", text="Enhanced query interface not initialized")]
+        
+        results = enhanced_query_interface.relationship_search(
+            source_entity=source_entity,
+            target_entity=target_entity,
+            relationship_type=relationship_type,
+            limit=limit
+        )
+        
+        if not results:
+            return [TextContent(type="text", text=f"No relationships found for: '{source_entity}'")]
+        
+        search_text = f"**Enhanced Relationship Search for:** {source_entity}\n\n"
+        if target_entity:
+            search_text += f"*Target Entity:* {target_entity}\n"
+        if relationship_type:
+            search_text += f"*Relationship Type:* {relationship_type}\n"
+        search_text += f"*Results Found:* {len(results)}\n\n"
+        
+        for i, result in enumerate(results):
+            search_text += f"**Result {i + 1}** (Score: {result['score']:.3f})\n"
+            
+            metadata = result.get('metadata', {})
+            if metadata.get('relationship_type'):
+                search_text += f"*Relationship:* {metadata['source_entity']} **{metadata['relationship_type']}** {metadata['target_entity']}\n"
+            
+            if metadata.get('file_name'):
+                search_text += f"*Source:* {metadata['file_name']}\n"
+            
+            content = result['content']
+            if len(content) > 300:
+                content = content[:300] + "..."
+            search_text += f"{content}\n\n"
+            search_text += "---\n\n"
+        
+        return [TextContent(type="text", text=search_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"Enhanced relationship search error: {str(e)}")]
+
+
+async def _enhanced_temporal_search(args: Dict[str, Any]) -> List[TextContent]:
+    """Perform enhanced temporal search with date filtering."""
+    query = args["query"]
+    start_date = args.get("start_date")
+    end_date = args.get("end_date")
+    search_type = args.get("search_type", "documents")
+    limit = args.get("limit", 10)
+    
+    try:
+        if enhanced_query_interface is None:
+            return [TextContent(type="text", text="Enhanced query interface not initialized")]
+        
+        results = enhanced_query_interface.temporal_search(
+            query=query,
+            start_date=start_date,
+            end_date=end_date,
+            search_type=search_type,
+            limit=limit
+        )
+        
+        if not results:
+            date_range = ""
+            if start_date and end_date:
+                date_range = f" between {start_date} and {end_date}"
+            elif start_date:
+                date_range = f" after {start_date}"
+            elif end_date:
+                date_range = f" before {end_date}"
+            
+            return [TextContent(type="text", text=f"No results found for temporal search: '{query}'{date_range}")]
+        
+        search_text = f"**Enhanced Temporal Search for:** {query}\n\n"
+        if start_date:
+            search_text += f"*Start Date:* {start_date}\n"
+        if end_date:
+            search_text += f"*End Date:* {end_date}\n"
+        search_text += f"*Search Type:* {search_type}\n"
+        search_text += f"*Results Found:* {len(results)}\n\n"
+        
+        for i, result in enumerate(results):
+            search_text += f"**Result {i + 1}** (Score: {result['score']:.3f})\n"
+            
+            metadata = result.get('metadata', {})
+            if metadata.get('file_name'):
+                search_text += f"*Source:* {metadata['file_name']}\n"
+            
+            if metadata.get('created_at_iso'):
+                search_text += f"*Date:* {metadata['created_at_iso'][:10]}\n"
+            elif metadata.get('date'):
+                search_text += f"*Date:* {metadata['date']}\n"
+            
+            content = result['content']
+            if len(content) > 400:
+                content = content[:400] + "..."
+            search_text += f"{content}\n\n"
+            search_text += "---\n\n"
+        
+        return [TextContent(type="text", text=search_text)]
+        
+    except Exception as e:
+        return [TextContent(type="text", text=f"Enhanced temporal search error: {str(e)}")]
+
+
 async def main():
     """Main entry point for the ARC MCP server."""
-    global db_manager
+    global db_manager, enhanced_query_interface
     
     # Initialize database manager
     try:
         config = get_config()
         db_manager = get_db_manager()
-        logger.info("ARC MCP Server initialized successfully")
+        
+        # Initialize enhanced embedding system
+        embedding_generator, enhanced_query_interface = create_enhanced_embedding_system(db_manager)
+        
+        logger.info("ARC MCP Server initialized successfully with enhanced embeddings")
         
         # Run the server
         async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):

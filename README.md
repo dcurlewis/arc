@@ -1,30 +1,77 @@
 # ARC: Augmented Recall & Context
+## Enhanced Knowledge Management System with Claude Desktop Integration
 
-An intelligent knowledge management system that transforms markdown documents into a searchable graph database with entity extraction, relationship mapping, and semantic search capabilities.
+An **production-ready** intelligent knowledge management system that transforms markdown documents into a sophisticated searchable graph database with enhanced AI-powered entity extraction, relationship mapping, and Claude Desktop integration.
 
 ## 🚀 Overview
 
-ARC processes your markdown documents to:
-- **Extract entities** (people, organizations, dates, technologies) using spaCy NLP
-- **Infer relationships** between entities based on context and proximity  
-- **Build a knowledge graph** stored in Neo4j for complex queries
-- **Enable semantic search** through ChromaDB vector embeddings
-- **Provide entity disambiguation** to handle name variations
+**ARC (Enhanced)** processes your markdown documents to:
+- **Extract entities** (people, organizations, projects, concepts) using enhanced spaCy NLP with custom disambiguation
+- **Infer sophisticated relationships** through context-aware analysis and proximity detection
+- **Build an intelligent knowledge graph** in Neo4j with temporal awareness
+- **Enable multi-modal semantic search** through enhanced ChromaDB embeddings
+- **Provide Claude Desktop integration** with 12 specialized MCP tools
+- **Support natural language queries** through sophisticated AI assistance
 
-## 🏗️ Architecture
+## 🎯 **Phase 3 Complete: Production-Ready System**
 
-- **Neo4j**: Graph database for entities and relationships
-- **ChromaDB**: Vector database for semantic document search
-- **spaCy**: Natural language processing for entity extraction
-- **Sentence Transformers**: Text embeddings for semantic similarity
+### **📊 System Capabilities**
+- **Enhanced entity extraction** with AI-powered disambiguation and alias handling
+- **Sophisticated relationship inference** with context awareness and temporal tracking  
+- **Multi-modal document indexing** with semantic understanding and metadata preservation
+- **12 specialized MCP tools** for comprehensive knowledge access through Claude Desktop
+- **4 embedding types** (documents, entities, relationships, hybrid) for multi-dimensional search
+
+### **🛠️ Available Claude Desktop Tools**
+- `search_entities` - Find people, organizations, projects
+- `semantic_search` - Document search by meaning  
+- `enhanced_hybrid_search` - **Most powerful** - search everything at once
+- `get_entity_relationships` - Entity relationship mapping
+- `find_connection_path` - How entities connect
+- `entity_context_search` - Entity + related documents
+- `entity_centric_search` - Enhanced entity-focused search
+- `relationship_search` - Specific relationship patterns
+- `temporal_search` - Time-range filtered search
+- `enhanced_temporal_search` - Advanced temporal search
+- `meeting_preparation` - Automated meeting context
+- `get_document` - Retrieve specific documents
+
+## 🏗️ Enhanced Architecture
+
+- **Neo4j**: Graph database with sophisticated entity relationships
+- **ChromaDB**: Vector database with multi-modal enhanced embeddings
+- **Enhanced spaCy**: Custom pipeline with disambiguation and custom patterns
+- **Advanced Query Interface**: Hybrid search across all content types
+- **Claude Desktop Integration**: Natural language access through MCP protocol
+- **Sentence Transformers**: Multiple embedding models for semantic understanding
 
 ## 📋 Prerequisites
 
 - Python 3.8+
 - Neo4j (via Homebrew or Docker)
+- Claude Desktop app (for Phase 3 integration)
 - Git
 
-## 🛠️ Installation
+## 🚀 **Quick Start (Phase 3 - Production Ready)**
+
+### **For Claude Desktop Integration**
+```bash
+# 1. Navigate to your ARC directory
+cd /Users/dbdave/work/arc
+
+# 2. Copy Claude Desktop configuration
+cp claude_desktop/claude_desktop_config.json ~/.config/claude-desktop/
+
+# 3. Update paths in config for your system
+nano ~/.config/claude-desktop/claude_desktop_config.json
+
+# 4. Restart Claude Desktop completely
+# 5. Test with: "Search for entities in the ARC system"
+```
+
+**📖 Complete Phase 3 Guide**: See [`claude_desktop/installation_guide.md`](claude_desktop/installation_guide.md) for detailed setup instructions.
+
+## 🛠️ Installation (Development Setup)
 
 ### 1. Clone the Repository
 ```bash
@@ -87,23 +134,53 @@ The system uses sensible defaults defined in `config.yaml`. You can customize:
 - Performance settings
 - Logging configuration
 
-## 📂 Project Structure
+## 📂 **Enhanced Project Structure**
 
 ```
 arc/
-├── tools/                  # Core ARC modules
-│   ├── arc_core.py        # Database managers and configuration
-│   ├── arc_import.py      # Import pipeline for processing files
-│   └── arc_query.py       # Query interface for searching
-├── tests/                 # Comprehensive test suite (Star Wars themed data)
-├── config.yaml           # Configuration with sensible defaults
-├── requirements.txt       # Python dependencies
-└── .env                   # Environment variables (create from .env.example)
+├── tools/                          # Enhanced ARC modules
+│   ├── arc_core.py                # Database managers and configuration
+│   ├── arc_import.py              # Enhanced import pipeline with --clear option
+│   ├── arc_query.py               # Advanced query interface
+│   ├── arc_mcp_server.py          # ⭐ MCP server with 12 specialized tools
+│   ├── enhanced_entity_extractor.py # ⭐ AI-powered entity extraction
+│   ├── enhanced_embeddings.py     # ⭐ Multi-modal embedding system
+│   └── run_comprehensive_tests.py # Comprehensive test automation
+├── claude_desktop/                 # ⭐ Phase 3 Integration Files
+│   ├── README.md                  # Integration overview and quick start
+│   ├── installation_guide.md      # Step-by-step setup instructions
+│   ├── arc_usage_guide.md         # Detailed examples and best practices  
+│   ├── arc_system_prompt.md       # Comprehensive AI system prompt
+│   └── claude_desktop_config.json # Claude Desktop MCP configuration
+├── tests/                         # ⭐ Enhanced test suite with fixtures
+│   ├── unit/                      # Unit tests for enhanced components
+│   ├── integration/               # Integration tests for MCP server
+│   └── conftest.py               # Enhanced test fixtures
+├── config/                        # ⭐ Enhanced configuration system
+│   ├── enhanced_entity_config.template.yaml # Anonymized config template
+│   └── README.md                 # Configuration documentation
+├── config.yaml                   # Enhanced configuration with new capabilities
+├── requirements.txt               # Updated dependencies
+└── .env                          # Environment variables (enhanced)
 ```
 
-## 🔄 Usage
+## 🔄 **Enhanced Usage**
 
-### Import Your Documents
+### **Phase 3: Natural Language Queries (Recommended)**
+
+Once Claude Desktop is configured, simply ask natural language questions:
+
+```
+"Tell me everything about [Person Name]"
+"Prepare me for my meeting with [Team] about [Topic]"  
+"How are [Person A] and [Person B] connected?"
+"Find recent discussions about [Project/Initiative]"
+"What are the key relationships around [Topic]?"
+```
+
+**📖 Usage Examples**: See [`claude_desktop/arc_usage_guide.md`](claude_desktop/arc_usage_guide.md) for comprehensive examples.
+
+### **Development: Enhanced Import Pipeline**
 
 Place markdown files in the `import/` directory, then run:
 
@@ -112,24 +189,25 @@ cd tools
 python arc_import.py --help
 ```
 
-Options:
-- `--limit N`: Process only first N files (useful for testing)
+**Enhanced Options:**
+- `--clear`: Reset databases before import (fresh start)
+- `--limit N`: Process only first N files (useful for testing)  
 - `--verbose`: Detailed logging output
 - `--directory PATH`: Custom import directory
 
-Examples:
+**Examples:**
 ```bash
-# Test with a few files
+# Fresh import with enhanced extraction (recommended)
+python arc_import.py --clear
+
+# Test with enhanced extraction
 python arc_import.py --limit 5 --verbose
 
-# Import all files
-python arc_import.py
-
-# Import from custom directory  
+# Import from custom directory with enhancements
 python arc_import.py --directory /path/to/your/docs
 ```
 
-### Query Your Knowledge
+### **Advanced: Query Interface
 
 ```python
 from arc_core import get_db_manager
@@ -219,6 +297,36 @@ rm -rf data/chromadb
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+## 📈 **Development Phases**
+
+### **Phase 1: Foundation** ✅ 
+- Basic Neo4j + ChromaDB integration
+- Initial MCP server with core tools  
+- Basic entity extraction and document indexing
+
+### **Phase 2: Enhancement** ✅
+- **Enhanced entity extraction** with custom spaCy pipeline
+- **Sophisticated disambiguation** rules and alias handling
+- **Multi-modal embeddings** with relationship awareness
+- **Advanced query interface** with hybrid search
+
+### **Phase 3: Production Integration** ✅ 
+- **Comprehensive Claude Desktop** integration
+- **12 specialized tools** with optimized prompting
+- **Usage guides and best practices**
+- **Global shortcuts and workflow templates**
+
+## 🎉 **Production-Ready System**
+
+Your **enhanced ARC system** provides:
+- **Comprehensive entity extraction** with sophisticated disambiguation
+- **Rich relationship mapping** with context awareness and temporal tracking
+- **Multi-modal document understanding** with preserved metadata
+- **12 specialized MCP tools** for comprehensive Claude Desktop access
+- **Advanced search capabilities** across multiple embedding types
+
 ---
 
-**ARC**: Turning your documents into an intelligent, searchable knowledge graph. 🧠✨ 
+**🎯 ARC Enhanced**: Transforming your documents into an intelligent, searchable knowledge graph with Claude Desktop integration. 🧠✨
+
+*Version 3.0 - Production Ready with Enhanced AI Integration* 
