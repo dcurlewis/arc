@@ -73,7 +73,7 @@ Create a `.env` file in the project root:
 # Neo4j Database Credentials
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=password123
+NEO4J_PASSWORD=neo4j # update to your own password on first usage
 
 # Optional: Override other settings if needed
 # SPACY_MODEL=en_core_web_lg
@@ -219,20 +219,6 @@ rm -rf data/chromadb
 ## 📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **spaCy** for excellent NLP capabilities
-- **Neo4j** for powerful graph database functionality  
-- **ChromaDB** for efficient vector storage and similarity search
-- **Sentence Transformers** for high-quality text embeddings
-
-## 📞 Support
-
-For questions or issues:
-1. Check the [documentation](docs/)
-2. Search [existing issues](https://github.com/dcurlewis/arc/issues)
-3. Create a [new issue](https://github.com/dcurlewis/arc/issues/new) if needed
 
 ---
 
