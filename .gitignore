@@ -59,3 +59,4 @@ htmlcov/
 
 # Documentation (contains sensitive information)
 docs/
+config/enhanced_entity_config.yaml

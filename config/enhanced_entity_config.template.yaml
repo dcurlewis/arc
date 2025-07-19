@@ -1,0 +1,246 @@
+# Enhanced Entity Extraction Configuration Template
+# Copy this file to enhanced_entity_config.yaml and customize with your specific entities
+
+spacy:
+  model: "en_core_web_lg"
+  
+entity:
+  # Explicit disambiguation rules for common entities
+  disambiguation_rules:
+    # People - Replace with your actual team member names
+    "Dave": "David Smith"
+    "Sarah": "Sarah Johnson" 
+    "Mike": "Michael Brown"
+    "Alex": "Alexander Davis"
+    "Sam": "Samuel Wilson"
+    
+    # Organizations - Replace with organizations relevant to your domain
+    "Google": "Google Inc"
+    "Microsoft": "Microsoft Corporation"
+    "Amazon": "Amazon Web Services"
+    "Meta": "Meta Platforms Inc"
+    "Apple": "Apple Inc"
+    "ACME": "ACME Corporation"
+    "TechCorp": "Technology Corporation"
+    
+    # Products/Projects - Replace with your actual projects and products
+    "AI": "Artificial Intelligence"
+    "ML": "Machine Learning"
+    "API": "Application Programming Interface"
+    "UI": "User Interface"
+    "UX": "User Experience"
+    "ProjectX": "Project X Platform"
+    "ProductY": "Product Y Service"
+    
+    # Common abbreviations
+    "CEO": "Chief Executive Officer"
+    "CTO": "Chief Technology Officer"
+    "VP": "Vice President"
+    "PM": "Product Manager"
+    "EM": "Engineering Manager"
+    
+  # Entity aliases (different names for same entity)
+  aliases:
+    # People aliases - Replace with actual name variations
+    "David S": "David Smith"
+    "D. Smith": "David Smith"
+    "Sarah J": "Sarah Johnson"
+    "S. Johnson": "Sarah Johnson"
+    "Mike B": "Michael Brown"
+    "M. Brown": "Michael Brown"
+    
+    # Organization aliases
+    "AWS": "Amazon Web Services"
+    "GCP": "Google Cloud Platform"
+    "Azure": "Microsoft Azure"
+    "FB": "Meta Platforms Inc"
+    
+    # Product aliases
+    "ChatGPT": "OpenAI ChatGPT"
+    "GPT": "Generative Pre-trained Transformer"
+    
+  # Domain-specific entity mappings
+  domain_mappings:
+    PERSON:
+      "engineer": "Software Engineer"
+      "developer": "Software Developer"
+      "manager": "Manager"
+      "lead": "Technical Lead"
+      "architect": "Software Architect"
+      
+    ORG:
+      "team": "Team"
+      "group": "Group"
+      "division": "Division"
+      "department": "Department"
+      
+    PRODUCT:
+      "platform": "Platform"
+      "system": "System"
+      "service": "Service"
+      "tool": "Tool"
+      "app": "Application"
+      
+    TECHNOLOGY:
+      "ai": "Artificial Intelligence"
+      "ml": "Machine Learning"
+      "dl": "Deep Learning"
+      "nlp": "Natural Language Processing"
+      "api": "Application Programming Interface"
+      
+  # Custom entity patterns for phrase matching
+  custom_patterns:
+    MEETING_TYPE:
+      - "standup"
+      - "daily standup"
+      - "sprint planning"
+      - "sprint review" 
+      - "sprint retrospective"
+      - "one on one"
+      - "1:1"
+      - "all hands"
+      - "town hall"
+      - "demo day"
+      - "show and tell"
+      - "planning meeting"
+      - "review meeting"
+      - "sync meeting"
+      - "check-in"
+      
+    JOB_TITLE:
+      - "software engineer"
+      - "senior software engineer"
+      - "staff engineer"
+      - "principal engineer"
+      - "engineering manager"
+      - "senior engineering manager"
+      - "director of engineering"
+      - "vp of engineering"
+      - "product manager"
+      - "senior product manager"
+      - "product owner"
+      - "scrum master"
+      - "tech lead"
+      - "technical lead"
+      - "team lead"
+      - "architect"
+      - "solution architect"
+      - "data scientist"
+      - "data engineer"
+      - "devops engineer"
+      - "qa engineer"
+      - "test engineer"
+      
+    TECHNOLOGY:
+      - "python"
+      - "javascript"
+      - "typescript"
+      - "react"
+      - "nodejs"
+      - "node.js"
+      - "vue.js"
+      - "angular"
+      - "docker"
+      - "kubernetes"
+      - "aws"
+      - "amazon web services"
+      - "google cloud"
+      - "microsoft azure"
+      - "terraform"
+      - "jenkins"
+      - "github"
+      - "gitlab"
+      - "jira"
+      - "confluence"
+      - "slack"
+      - "teams"
+      - "zoom"
+      
+    FRAMEWORK:
+      - "django"
+      - "flask"
+      - "fastapi"
+      - "express"
+      - "spring boot"
+      - "rails"
+      - "laravel"
+      - "react native"
+      - "flutter"
+      - "pytorch"
+      - "tensorflow"
+      - "scikit-learn"
+      
+    METHODOLOGY:
+      - "agile"
+      - "scrum"
+      - "kanban"
+      - "waterfall"
+      - "devops"
+      - "ci/cd"
+      - "continuous integration"
+      - "continuous deployment"
+      - "test driven development"
+      - "tdd"
+      - "behavior driven development"
+      - "bdd"
+      
+    TIME_PERIOD:
+      - "q1"
+      - "q2" 
+      - "q3"
+      - "q4"
+      - "quarter 1"
+      - "quarter 2"
+      - "quarter 3"
+      - "quarter 4"
+      - "first quarter"
+      - "second quarter"
+      - "third quarter"
+      - "fourth quarter"
+      - "sprint 1"
+      - "sprint 2"
+      - "sprint 3"
+      - "iteration 1"
+      - "iteration 2"
+      - "cycle 1"
+      - "phase 1"
+      - "phase 2"
+      - "milestone 1"
+      - "milestone 2"
+      
+# Relationship inference settings
+relationships:
+  # Meeting relationship settings
+  meeting:
+    participant_confidence_threshold: 0.7
+    max_participants: 20
+    
+  # Organization relationship settings  
+  organization:
+    affiliation_confidence_threshold: 0.5
+    max_distance_chars: 300
+    
+  # Project relationship settings
+  project:
+    involvement_confidence_threshold: 0.4
+    
+  # Temporal relationship settings
+  temporal:
+    scheduling_confidence_threshold: 0.6
+    
+# Confidence scoring weights
+confidence:
+  base_confidence: 1.0
+  disambiguation_bonus: 0.1
+  mention_count_bonus: 0.05
+  short_entity_penalty: 0.3
+  title_case_bonus: 0.05
+  context_match_bonus: 0.2
+  filename_match_bonus: 0.2
+  
+# Performance settings
+performance:
+  max_entities_per_document: 1000
+  max_relationships_per_document: 500
+  enable_caching: true
+  cache_size: 10000 

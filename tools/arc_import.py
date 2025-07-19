@@ -6,12 +6,14 @@ Handles importing markdown files into the Neo4j knowledge graph and ChromaDB vec
 import re
 import os
 import logging
+import yaml
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Set
 from datetime import datetime
 from dataclasses import dataclass
 
 from arc_core import get_config, get_db_manager, FileProcessor, EntityExtractor, ContentHasher
+from enhanced_entity_extractor import EnhancedEntityExtractor
 
 
 # Configure logging
@@ -396,12 +398,49 @@ class ARCImporter:
         self.config = config or get_config()
         self.db_manager = get_db_manager()
         self.file_processor = FileProcessor(self.config)
-        self.entity_extractor = EntityRelationshipExtractor(self.config)
+        
+        # Load enhanced entity configuration
+        enhanced_config = self._load_enhanced_config()
+        self.entity_extractor = EnhancedEntityExtractor(enhanced_config)
+        
         self.graph_manager = GraphManager(self.db_manager)
         self.vector_manager = VectorManager(self.db_manager)
         
         # Initialize constraints
         self.graph_manager.create_constraints()
+        
+        logger.info("Initialized ARCImporter with enhanced entity extraction")
+    
+    def _load_enhanced_config(self) -> Dict[str, Any]:
+        """Load enhanced entity extraction configuration."""
+        config_path = Path("config/enhanced_entity_config.yaml")
+        template_path = Path("config/enhanced_entity_config.template.yaml")
+        
+        # Try to load the actual config file first
+        if config_path.exists():
+            try:
+                with open(config_path, 'r') as f:
+                    enhanced_config = yaml.safe_load(f)
+                logger.info(f"Loaded enhanced entity config from {config_path}")
+                return enhanced_config
+            except Exception as e:
+                logger.warning(f"Failed to load enhanced config: {e}")
+        
+        # Fallback to template if actual config doesn't exist
+        elif template_path.exists():
+            try:
+                with open(template_path, 'r') as f:
+                    enhanced_config = yaml.safe_load(f)
+                logger.info(f"Loaded enhanced entity config from template: {template_path}")
+                logger.info("Consider copying the template to enhanced_entity_config.yaml and customizing it")
+                return enhanced_config
+            except Exception as e:
+                logger.warning(f"Failed to load template config: {e}")
+        
+        # Return basic config if neither file exists
+        logger.warning("No enhanced entity config found, using basic configuration")
+        logger.info("To use enhanced entity extraction, copy config/enhanced_entity_config.template.yaml to config/enhanced_entity_config.yaml")
+        return self.config
     
     def clear_databases(self):
         """Clear all data from Neo4j and ChromaDB."""
