@@ -96,7 +96,6 @@ arc/
 │   ├── arc_import.py      # Import pipeline for processing files
 │   └── arc_query.py       # Query interface for searching
 ├── tests/                 # Comprehensive test suite (Star Wars themed data)
-├── docs/                  # Project documentation
 ├── config.yaml           # Configuration with sensible defaults
 ├── requirements.txt       # Python dependencies
 └── .env                   # Environment variables (create from .env.example)

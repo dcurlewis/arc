@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "arc-knowledge-graph": {
+      "command": "/path/to/arc/arc_mcp_server.sh",
+      "args": [],
+      "env": {
+        "ARC_LOG_LEVEL": "INFO"
+      }
+    }
+  }
+} 

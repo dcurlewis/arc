@@ -245,6 +245,15 @@ class FileProcessor:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
+        # Get actual file timestamps
+        import os
+        file_stat = os.stat(file_path)
+        file_mtime = datetime.fromtimestamp(file_stat.st_mtime)
+        file_ctime = datetime.fromtimestamp(file_stat.st_ctime)
+        
+        # Use the earlier of creation time and modification time as created_at
+        created_at = min(file_ctime, file_mtime)
+        
         metadata = {
             'file_path': str(file_path),
             'file_name': file_path.name,
@@ -252,7 +261,8 @@ class FileProcessor:
             'content': content,
             'content_hash': ContentHasher.hash_content(content),
             'file_size': len(content),
-            'created_at': datetime.now().isoformat()
+            'created_at': created_at.isoformat(),
+            'modified_at': file_mtime.isoformat()
         }
         
         # Extract date from filename (YYYYMMDD-*.md pattern)

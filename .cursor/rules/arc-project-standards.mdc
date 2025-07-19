@@ -1,0 +1,178 @@
+# ARC Project-Specific Development Standards
+
+This rule enforces project-specific standards for the ARC (Augmented Recall & Context) system to ensure high-quality implementation, privacy protection, and proper collaboration.
+
+## Implementation Quality Standards
+
+### No Stubbed or Lazy Implementations
+- **NEVER** implement placeholder functions with TODO comments
+- **NEVER** write "simplified implementation" comments that defer real work
+- **NEVER** ship functionality that doesn't actually work as intended
+- If a feature cannot be implemented properly immediately:
+  - Explicitly highlight the limitation to the user
+  - Add a proper task to the project plan/todo list
+  - Move on to other work rather than shipping broken code
+
+### Examples of FORBIDDEN patterns:
+```python
+# BAD: Lazy implementation
+def temporal_search(query, start_date, end_date):
+    # TODO: Implement proper temporal filtering
+    return basic_search(query)
+
+# BAD: Stubbed functionality  
+def advanced_feature():
+    # This is a simplified implementation - we'll improve it later
+    pass
+
+# BAD: Non-functional placeholder
+def calculate_relevance():
+    return 1.0  # Placeholder value
+```
+
+### Examples of ACCEPTABLE patterns:
+```python
+# GOOD: Full implementation or clear limitation
+def temporal_search(query, start_date, end_date):
+    # Build ChromaDB temporal filter
+    where_filter = {}
+    if start_date:
+        where_filter["created_at"] = {"$gte": start_date}
+    # ... complete implementation
+    
+# GOOD: Honest communication about limitations
+# Note to user: "Complex feature X requires Y component to be built first. 
+# Should I add this to our roadmap and implement Z instead?"
+```
+
+## Privacy Protection Standards
+
+### Personal Information Security
+- **NEVER** include personal directory paths in documentation
+- **NEVER** include usernames, personal identifiers, or system-specific paths
+- **NEVER** include personal email addresses, real names, or identifying information
+- Always use placeholder values in documentation and examples
+
+### Examples of FORBIDDEN patterns:
+```markdown
+# BAD: Personal path exposure
+cd /Users/username/work/project
+
+# BAD: Personal information
+Created by: Real Name (email@company.com)
+
+# BAD: System-specific paths with personal info
+/Users/username/specific/path/file.json
+```
+
+### Examples of ACCEPTABLE patterns:
+```markdown
+# GOOD: Generic placeholders
+cd /path/to/project
+
+# GOOD: Generic references
+Created by: [Your Name]
+
+# GOOD: Variable paths
+$PROJECT_ROOT/config/file.json
+# Or:
+$HOME/.config/app/config.json
+```
+
+## Collaboration Standards
+
+### Decision Making
+- **ALWAYS** check with the user before:
+  - Creating new file structures or reorganizing existing ones
+  - Choosing naming conventions for new components
+  - Making architectural decisions that affect multiple components
+  - Implementing features in ways that aren't obviously correct
+  - Adding new dependencies or external tools
+
+### Communication Requirements
+- **ALWAYS** explain what you're about to implement before doing it
+- **ALWAYS** ask for clarification if requirements are ambiguous
+- **ALWAYS** highlight trade-offs and alternatives when they exist
+- **ALWAYS** check in after implementing complex features
+
+### Examples of required communication:
+```
+# BEFORE implementing:
+"I'm about to implement the temporal search feature. I see two approaches:
+1. Filter in the database layer (more efficient)
+2. Filter in the application layer (more flexible)
+Which would you prefer, or should I implement option 1 for now?"
+
+# DURING implementation:
+"I'm creating a new `temporal_filters.py` module for the date filtering logic. 
+Does this naming and location make sense?"
+
+# AFTER implementation:
+"I've completed the temporal search feature. It supports date ranges and 
+filters both Neo4j and ChromaDB. Would you like me to add additional 
+temporal features or move on to the next item?"
+```
+
+## File and Naming Standards
+
+### Documentation Standards
+- All documentation must be deployment-ready (no personal information)
+- Use environment variables or placeholder paths in setup instructions
+- Include both development and production configuration examples
+- Test all documented commands and procedures
+
+### Code Organization
+- Check before creating new directories or modules
+- Use clear, descriptive names that match project conventions
+- Maintain consistency with existing project structure
+- Document any new architectural patterns or conventions
+
+## Testing and Validation Standards
+
+### Implementation Validation
+- **ALWAYS** test implementations before considering them complete
+- **NEVER** assume functionality works without verification
+- Include error handling and edge case consideration
+- Validate that features work end-to-end, not just in isolation
+
+### Documentation Validation
+- **ALWAYS** verify that documented commands actually work
+- **ALWAYS** test setup instructions from a fresh environment perspective
+- **NEVER** include untested code examples or commands
+
+## Quality Assurance Checklist
+
+Before considering any implementation complete:
+
+- [ ] Does the feature work as intended without placeholders or stubs?
+- [ ] Have I removed all personal information from documentation?
+- [ ] Have I checked with the user on any non-obvious decisions?
+- [ ] Have I tested the implementation works as documented?
+- [ ] Have I used appropriate error handling and validation?
+- [ ] Is the code consistent with existing project patterns?
+- [ ] Would this be safe to share publicly without exposing personal information?
+
+## Enforcement Actions
+
+When these standards are violated:
+1. **STOP** the current implementation
+2. **ACKNOWLEDGE** the violation explicitly
+3. **FIX** the issue immediately
+4. **VERIFY** the fix meets standards before proceeding
+5. **CONFIRM** with user before continuing
+
+## Escalation Guidelines
+
+If uncertain about any aspect:
+1. **ASK** the user for clarification rather than guessing
+2. **PROPOSE** specific alternatives with trade-offs
+3. **WAIT** for user input rather than proceeding with assumptions
+4. **DOCUMENT** decisions for future reference
+
+---
+
+**Remember: It's better to pause and ask than to implement incorrectly or expose private information.**
+description:
+globs:
+alwaysApply: false
+---

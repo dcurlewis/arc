@@ -188,13 +188,14 @@ class GraphManager:
             entity_type = self._get_entity_type(entity['label'])
             node_id = self._generate_node_id(entity['text'], entity_type)
             
-            # Prepare properties
+            # Prepare properties  
             properties = {
                 'id': node_id,
                 'name': entity['text'],
                 'canonical_name': entity.get('canonical_name', entity['text']),
                 'entity_type': entity['label'],
-                'created_at': datetime.now().isoformat(),
+                'created_at': metadata.get('created_at', datetime.now().isoformat()),
+                'modified_at': metadata.get('modified_at', datetime.now().isoformat()),
                 'source_file': metadata.get('file_name'),
                 'confidence': entity.get('confidence', 1.0)
             }
@@ -236,7 +237,8 @@ class GraphManager:
                 'file_path': metadata['file_path'],
                 'content_hash': metadata['content_hash'],
                 'date': metadata.get('date'),
-                'created_at': datetime.now().isoformat(),
+                'created_at': metadata.get('created_at', datetime.now().isoformat()),
+                'modified_at': metadata.get('modified_at', datetime.now().isoformat()),
                 'file_size': metadata.get('file_size', 0)
             }
             
@@ -340,12 +342,33 @@ class VectorManager:
             content = metadata['content']
             
             # Create metadata for ChromaDB (must be JSON serializable)
+            # Convert datetime strings to timestamps for temporal filtering
+            created_at_ts = None
+            modified_at_ts = None
+            
+            if metadata.get('created_at'):
+                try:
+                    created_at_dt = datetime.fromisoformat(metadata['created_at'])
+                    created_at_ts = created_at_dt.timestamp()
+                except (ValueError, TypeError):
+                    pass
+            
+            if metadata.get('modified_at'):
+                try:
+                    modified_at_dt = datetime.fromisoformat(metadata['modified_at'])
+                    modified_at_ts = modified_at_dt.timestamp()
+                except (ValueError, TypeError):
+                    pass
+            
             chroma_metadata = {
                 'file_name': metadata['file_name'],
                 'title': metadata.get('title', ''),
                 'date': metadata.get('date'),
                 'file_size': metadata.get('file_size', 0),
-                'created_at': metadata.get('created_at')
+                'created_at': created_at_ts,
+                'modified_at': modified_at_ts,
+                'created_at_iso': metadata.get('created_at'),
+                'modified_at_iso': metadata.get('modified_at')
             }
             
             # Remove None values
@@ -379,6 +402,40 @@ class ARCImporter:
         
         # Initialize constraints
         self.graph_manager.create_constraints()
+    
+    def clear_databases(self):
+        """Clear all data from Neo4j and ChromaDB."""
+        logger.info("🗑️  Clearing all databases...")
+        
+        # Clear Neo4j
+        try:
+            with self.db_manager.neo4j.session() as session:
+                # Delete all nodes and relationships
+                session.run("MATCH (n) DETACH DELETE n")
+                logger.info("✅ Neo4j database cleared")
+        except Exception as e:
+            logger.error(f"❌ Error clearing Neo4j: {e}")
+            raise
+        
+        # Clear ChromaDB
+        try:
+            client = self.db_manager.chromadb
+            # Get collection name from config
+            collection_name = self.config.get('chromadb.collection', 'arc_documents')
+            
+            try:
+                # Try to delete the collection if it exists
+                client.delete_collection(collection_name)
+                logger.info("✅ ChromaDB collection deleted")
+            except Exception:
+                # Collection might not exist, which is fine
+                logger.info("✅ ChromaDB collection was already empty or non-existent")
+                
+        except Exception as e:
+            logger.error(f"❌ Error clearing ChromaDB: {e}")
+            raise
+        
+        logger.info("🎯 All databases cleared successfully")
     
     def import_file(self, file_path: Path) -> Tuple[bool, Dict[str, Any]]:
         """Import a single markdown file."""
@@ -483,14 +540,21 @@ def main():
     parser = argparse.ArgumentParser(description='Import markdown files into ARC knowledge graph')
     parser.add_argument('--limit', type=int, help='Limit number of files to process')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose logging')
+    parser.add_argument('--clear', action='store_true', help='Clear all existing data before importing')
     
     args = parser.parse_args()
     
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
-    # Run import
+    # Initialize importer
     importer = ARCImporter()
+    
+    # Clear databases if requested
+    if args.clear:
+        importer.clear_databases()
+    
+    # Run import
     stats = importer.import_directory(limit=args.limit)
     
     # Print results

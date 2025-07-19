@@ -56,3 +56,6 @@ test_output/
 htmlcov/
 # Environment variables (contains secrets)
 .env
+
+# Documentation (contains sensitive information)
+docs/
