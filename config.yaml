@@ -1,0 +1,201 @@
+# ARC (Adaptive Retention & Context) Configuration
+# This file contains all configuration settings for the ARC system
+
+# Neo4j Graph Database Configuration
+neo4j:
+  uri: "neo4j://localhost:7687"
+  embedded: true
+  database: "arc"
+  # auth:
+  #   username: "neo4j"
+  #   password: "your_password"
+
+# ChromaDB Vector Database Configuration  
+chromadb:
+  path: "./data/chromadb"
+  collection_documents: "documents"
+  collection_summaries: "summaries"
+
+# spaCy NLP Model Configuration
+spacy:
+  model: "en_core_web_lg"  # Large model for better accuracy
+  # model: "en_core_web_sm"  # Smaller/faster alternative
+
+# Sentence Transformers for Embeddings
+embeddings:
+  model: "sentence-transformers/all-MiniLM-L6-v2"
+  # Alternative models:
+  # model: "sentence-transformers/all-mpnet-base-v2"  # Better quality, slower
+  # model: "sentence-transformers/paraphrase-MiniLM-L6-v2"  # Faster
+
+# File Import Configuration
+import:
+  source_dir: "../import"  # Adjusted for running from tools/ directory
+  backup_dir: "./backups"
+  # File patterns to include/exclude
+  patterns:
+    include: ["*.md", "*.markdown"]
+    exclude: ["README.md", ".*"]  # Exclude hidden files and README
+
+# Entity Disambiguation Rules
+# Maps common name variations to canonical names
+entity:
+  disambiguation_rules:
+    # Common name variations - customize these for your actual contacts
+    "Dave": "David"
+    "Alex": "Alexander" 
+    "Mike": "Michael"
+    "Chris": "Christopher"
+    "Matt": "Matthew"
+    "Tom": "Thomas"
+    "Rob": "Robert"
+    "Jim": "James"
+    "Bill": "William"
+    "Dan": "Daniel"
+    "Sam": "Samuel"
+    "Ben": "Benjamin"
+    "Nick": "Nicholas"
+    "Andy": "Andrew"
+    "Steve": "Steven"
+    
+    # Company/Organization variations - add your actual companies
+    # "Corp": "Corporation"
+    # "Ltd": "Limited"
+    # "Inc": "Incorporated"
+    
+    # Add specific people from your network:
+    # "John Smith": "John Smith"  # Canonical form
+    # "J. Smith": "John Smith"    # Alternative form
+    
+  # Entity extraction settings
+  extraction:
+    min_confidence: 0.7  # Minimum confidence score for entities
+    min_length: 2        # Minimum character length for entities
+    max_entity_distance: 200  # Max character distance for relationship inference
+
+# Relationship Extraction Configuration
+relationships:
+  # Keywords that indicate employment/affiliation
+  employment_keywords:
+    - "works at"
+    - "employed by" 
+    - "works for"
+    - "at"
+    - "from"
+    - "with"
+    - "CEO of"
+    - "CTO of"
+    - "VP of"
+    - "Director of"
+    - "Manager at"
+    - "Engineer at"
+    
+  # Meeting detection keywords
+  meeting_keywords:
+    - "meeting"
+    - "call"
+    - "discussion"
+    - "standup"
+    - "sync"
+    - "1:1"
+    - "one-on-one"
+    - "conference"
+    - "session"
+    - "workshop"
+    
+  # Confidence thresholds
+  confidence:
+    meeting_attendance: 0.9    # High confidence for meeting participation
+    employment: 0.8            # Medium-high for employment relationships
+    collaboration: 0.7         # Medium for general collaboration
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # Log files
+  files:
+    main: "./logs/arc.log"
+    import: "./logs/import.log"
+    errors: "./logs/errors.log"
+
+# Performance Settings
+performance:
+  # Database connection pooling
+  neo4j_pool_size: 10
+  
+  # Batch processing
+  batch_size: 100  # Number of entities to process in one batch
+  
+  # Embedding generation
+  embedding_batch_size: 32
+  
+  # Memory settings
+  max_text_length: 50000  # Maximum characters per document
+
+# Backup Configuration
+backup:
+  enabled: true
+  schedule: "daily"  # daily, weekly, monthly
+  retention_days: 30
+  
+  # What to backup
+  include:
+    - "graph_export"    # Neo4j graph export
+    - "vector_store"    # ChromaDB data
+    - "original_files"  # Markdown files
+    
+  # Backup location
+  destination: "./backups"
+
+# Data Quality Settings
+quality:
+  # Duplicate detection thresholds
+  duplicate_similarity: 0.95  # Similarity threshold for duplicate detection
+  
+  # Entity validation
+  validate_entities: true
+  validate_relationships: true
+  
+  # Data cleaning
+  clean_text: true          # Remove extra whitespace, normalize text
+  normalize_names: true     # Apply disambiguation rules
+  
+# Search Configuration
+search:
+  # Semantic search settings
+  default_results: 10       # Default number of search results
+  similarity_threshold: 0.7 # Minimum similarity for search results
+  
+  # Search result ranking
+  boost_recent: true        # Boost recent documents in search results
+  boost_entities: true      # Boost documents with many entities
+  
+# Integration Settings (for future use)
+integrations:
+  # Slack integration (future)
+  slack:
+    enabled: false
+    # bot_token: "xoxb-your-token"
+    
+  # Calendar integration (future)  
+  calendar:
+    enabled: false
+    # provider: "google"  # google, outlook, etc.
+    
+  # Jira integration (future)
+  jira:
+    enabled: false
+    # url: "https://your-domain.atlassian.net"
+
+# Development/Debug Settings
+debug:
+  # Enable debug features
+  verbose_logging: false
+  save_intermediate_data: false  # Save entity extraction results for debugging
+  validate_graph_integrity: true # Check graph consistency after operations
+  
+  # Performance monitoring
+  profile_operations: false  # Profile database operations
+  log_slow_queries: true 

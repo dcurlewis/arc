@@ -1,0 +1,58 @@
+# Data directories (contain personal/sensitive information)
+import/
+data/
+backups/
+
+# Memory files (may contain sensitive context)
+memory/*.md
+!memory/.gitkeep
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Neo4j and ChromaDB
+neo4j/
+chromadb/
+*.db
+*.dump
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Test outputs
+test_output/
+.pytest_cache/
+.coverage
+htmlcov/
+# Environment variables (contains secrets)
+.env
