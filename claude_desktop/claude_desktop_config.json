@@ -21,7 +21,11 @@
         "temporal_search",
         "enhanced_temporal_search",
         "meeting_preparation",
-        "get_document"
+        "get_document",
+        "ingest_content",
+        "add_meeting_transcript",
+        "add_document_summary",
+        "add_quick_note"
       ]
     }
   },

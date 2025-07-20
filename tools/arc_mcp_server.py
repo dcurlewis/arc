@@ -34,6 +34,7 @@ import mcp.server.stdio
 
 from arc_core import get_config, get_db_manager
 from enhanced_embeddings import create_enhanced_embedding_system
+from enhanced_mcp_tools import get_content_ingestor
 
 
 # Configure logging
@@ -472,6 +473,111 @@ async def list_tools() -> List[Tool]:
                 },
                 "required": ["query"]
             }
+        ),
+        
+        # Content Ingestion Tools
+        Tool(
+            name="ingest_content",
+            description="Add raw content directly to the ARC knowledge base with entity extraction and relationship inference",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "The text content to add to the knowledge base"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Title or description for the content"
+                    },
+                    "content_type": {
+                        "type": "string",
+                        "description": "Type of content (document, note, transcript, etc.)",
+                        "default": "document"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional tags for categorization"
+                    }
+                },
+                "required": ["content", "title"]
+            }
+        ),
+        
+        Tool(
+            name="add_meeting_transcript",
+            description="Add a meeting transcript with structured information including attendees and date",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "transcript": {
+                        "type": "string",
+                        "description": "Meeting transcript content"
+                    },
+                    "meeting_title": {
+                        "type": "string",
+                        "description": "Title of the meeting"
+                    },
+                    "attendees": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of meeting attendees (names)"
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Meeting date (YYYY-MM-DD format)"
+                    }
+                },
+                "required": ["transcript", "meeting_title"]
+            }
+        ),
+        
+        Tool(
+            name="add_document_summary",
+            description="Add a document with an AI-generated summary for enhanced searchability",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "original_content": {
+                        "type": "string",
+                        "description": "Original document content"
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "AI-generated summary of the document"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Document title"
+                    },
+                    "source_type": {
+                        "type": "string",
+                        "description": "Type of source document (email, report, article, etc.)",
+                        "default": "document"
+                    }
+                },
+                "required": ["original_content", "summary", "title"]
+            }
+        ),
+        
+        Tool(
+            name="add_quick_note",
+            description="Add a quick note or context snippet to the knowledge base",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "note_content": {
+                        "type": "string",
+                        "description": "Note content"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Optional title (auto-generated if not provided)"
+                    }
+                },
+                "required": ["note_content"]
+            }
         )
     ]
 
@@ -510,6 +616,14 @@ async def call_tool(name: str, arguments: dict) -> List[Union[TextContent, Image
             return await _enhanced_relationship_search(args)
         elif tool_name == "enhanced_temporal_search":
             return await _enhanced_temporal_search(args)
+        elif tool_name == "ingest_content":
+            return await _ingest_content(args)
+        elif tool_name == "add_meeting_transcript":
+            return await _add_meeting_transcript(args)
+        elif tool_name == "add_document_summary":
+            return await _add_document_summary(args)
+        elif tool_name == "add_quick_note":
+            return await _add_quick_note(args)
         else:
             raise ValueError(f"Unknown tool: {tool_name}")
             
@@ -1161,6 +1275,150 @@ async def _enhanced_temporal_search(args: Dict[str, Any]) -> List[TextContent]:
         
     except Exception as e:
         return [TextContent(type="text", text=f"Enhanced temporal search error: {str(e)}")]
+
+
+# Content Ingestion Tool Handlers
+
+async def _ingest_content(args: Dict[str, Any]) -> List[TextContent]:
+    """Handle content ingestion requests."""
+    content = args["content"]
+    title = args["title"]
+    content_type = args.get("content_type", "document")
+    tags = args.get("tags", [])
+    
+    try:
+        ingestor = get_content_ingestor()
+        result = ingestor.ingest_content(
+            content=content,
+            title=title,
+            content_type=content_type,
+            tags=tags
+        )
+        
+        if result['success']:
+            response_text = f"✅ **Content Successfully Added to ARC Knowledge Base**\n\n"
+            response_text += f"**Title:** {result['title']}\n"
+            response_text += f"**Type:** {result['content_type']}\n"
+            response_text += f"**Document ID:** {result['document_id']}\n"
+            response_text += f"**Entities Extracted:** {result['entities_created']}\n"
+            response_text += f"**Relationships Created:** {result['relationships_created']}\n"
+            response_text += f"**Timestamp:** {result['timestamp']}\n\n"
+            response_text += "The content has been processed with enhanced entity extraction and is now searchable through all ARC tools."
+        else:
+            response_text = f"❌ **Failed to Add Content**\n\nError: {result['error']}"
+        
+        return [TextContent(type="text", text=response_text)]
+        
+    except Exception as e:
+        logger.error(f"Content ingestion error: {str(e)}")
+        return [TextContent(type="text", text=f"Error ingesting content: {str(e)}")]
+
+
+async def _add_meeting_transcript(args: Dict[str, Any]) -> List[TextContent]:
+    """Handle meeting transcript ingestion."""
+    transcript = args["transcript"]
+    meeting_title = args["meeting_title"]
+    attendees = args.get("attendees", [])
+    date = args.get("date")
+    
+    try:
+        ingestor = get_content_ingestor()
+        result = ingestor.add_meeting_transcript(
+            transcript=transcript,
+            meeting_title=meeting_title,
+            attendees=attendees,
+            date=date
+        )
+        
+        if result['success']:
+            response_text = f"✅ **Meeting Transcript Successfully Added**\n\n"
+            response_text += f"**Meeting:** {result['title']}\n"
+            if date:
+                response_text += f"**Date:** {date}\n"
+            if attendees:
+                response_text += f"**Attendees:** {', '.join(attendees)}\n"
+            response_text += f"**Document ID:** {result['document_id']}\n"
+            response_text += f"**Entities Extracted:** {result['entities_created']} (people, organizations, topics)\n"
+            response_text += f"**Relationships Created:** {result['relationships_created']}\n"
+            response_text += f"**Timestamp:** {result['timestamp']}\n\n"
+            response_text += "The meeting transcript has been processed and indexed. You can now:\n"
+            response_text += "• Search for meeting content semantically\n"
+            response_text += "• Find relationships between attendees\n"
+            response_text += "• Use meeting_preparation tool for context before future meetings"
+        else:
+            response_text = f"❌ **Failed to Add Meeting Transcript**\n\nError: {result['error']}"
+        
+        return [TextContent(type="text", text=response_text)]
+        
+    except Exception as e:
+        logger.error(f"Meeting transcript ingestion error: {str(e)}")
+        return [TextContent(type="text", text=f"Error adding meeting transcript: {str(e)}")]
+
+
+async def _add_document_summary(args: Dict[str, Any]) -> List[TextContent]:
+    """Handle document with summary ingestion."""
+    original_content = args["original_content"]
+    summary = args["summary"]
+    title = args["title"]
+    source_type = args.get("source_type", "document")
+    
+    try:
+        ingestor = get_content_ingestor()
+        result = ingestor.add_document_summary(
+            original_content=original_content,
+            summary=summary,
+            title=title,
+            source_type=source_type
+        )
+        
+        if result['success']:
+            response_text = f"✅ **Document with Summary Successfully Added**\n\n"
+            response_text += f"**Title:** {result['title']}\n"
+            response_text += f"**Source Type:** {source_type}\n"
+            response_text += f"**Document ID:** {result['document_id']}\n"
+            response_text += f"**Entities Extracted:** {result['entities_created']}\n"
+            response_text += f"**Relationships Created:** {result['relationships_created']}\n"
+            response_text += f"**Timestamp:** {result['timestamp']}\n\n"
+            response_text += "The document has been indexed with both the original content and AI summary, "
+            response_text += "enabling enhanced searchability through semantic similarity and entity relationships."
+        else:
+            response_text = f"❌ **Failed to Add Document**\n\nError: {result['error']}"
+        
+        return [TextContent(type="text", text=response_text)]
+        
+    except Exception as e:
+        logger.error(f"Document summary ingestion error: {str(e)}")
+        return [TextContent(type="text", text=f"Error adding document with summary: {str(e)}")]
+
+
+async def _add_quick_note(args: Dict[str, Any]) -> List[TextContent]:
+    """Handle quick note ingestion."""
+    note_content = args["note_content"]
+    title = args.get("title")
+    
+    try:
+        ingestor = get_content_ingestor()
+        result = ingestor.add_quick_note(
+            note_content=note_content,
+            title=title
+        )
+        
+        if result['success']:
+            response_text = f"✅ **Quick Note Successfully Added**\n\n"
+            response_text += f"**Title:** {result['title']}\n"
+            response_text += f"**Document ID:** {result['document_id']}\n"
+            response_text += f"**Entities Extracted:** {result['entities_created']}\n"
+            response_text += f"**Relationships Created:** {result['relationships_created']}\n"
+            response_text += f"**Timestamp:** {result['timestamp']}\n\n"
+            response_text += "The note has been processed and is now part of your searchable knowledge base."
+        else:
+            response_text = f"❌ **Failed to Add Note**\n\nError: {result['error']}"
+        
+        return [TextContent(type="text", text=response_text)]
+        
+    except Exception as e:
+        logger.error(f"Quick note ingestion error: {str(e)}")
+        return [TextContent(type="text", text=f"Error adding quick note: {str(e)}")]
 
 
 async def main():
