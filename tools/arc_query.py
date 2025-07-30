@@ -141,8 +141,10 @@ def context_for_meeting(meeting_info: str) -> Dict[str, Any]:
     db = get_db_manager()
     
     # First, try to extract entities from the meeting description
-    from arc_core import get_entity_extractor
-    extractor = get_entity_extractor()
+    # Note: get_entity_extractor removed - use EnhancedEntityExtractor directly
+    from enhanced_entity_extractor import EnhancedEntityExtractor
+    config = get_config()
+    extractor = EnhancedEntityExtractor(config)
     entities = extractor.extract_entities(meeting_info)
     
     context = {

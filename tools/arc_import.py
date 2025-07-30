@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup
 from langchain_text_splitters import MarkdownTextSplitter
 from spacy.lang.en import English
 
-from arc_core import get_config, get_db_manager, FileProcessor, EntityExtractor, ContentHasher
+from arc_core import get_config, get_db_manager, FileProcessor, ContentHasher
 from enhanced_entity_extractor import EnhancedEntityExtractor
 
 
@@ -72,127 +72,7 @@ def clear_all_databases(db_manager):
     logger.info("🎯 All databases cleared successfully")
 
 
-class EntityRelationshipExtractor:
-    """Extracts entities and relationships from markdown content."""
-    
-    def __init__(self, config):
-        self.config = config
-        self.nlp = None
-        self._load_nlp_model()
-    
-    def _load_nlp_model(self):
-        """Load spaCy NLP model."""
-        try:
-            import spacy
-            model_name = self.config.get('spacy.model', 'en_core_web_lg')
-            self.nlp = spacy.load(model_name)
-            logger.info(f"Loaded spaCy model: {model_name}")
-        except Exception as e:
-            logger.error(f"Failed to load spaCy model: {e}")
-            raise
-    
-    def extract_entities(self, text: str, context: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-        """Extract entities from text."""
-        if not self.nlp:
-            return []
-        
-        doc = self.nlp(text)
-        entities = []
-        
-        for ent in doc.ents:
-            # Skip very short entities or common stopwords
-            if len(ent.text.strip()) < 2:
-                continue
-                
-            entity = {
-                'text': ent.text.strip(),
-                'label': ent.label_,
-                'start': ent.start_char,
-                'end': ent.end_char,
-                'confidence': getattr(ent, 'confidence', 1.0)
-            }
-            
-            # Apply disambiguation rules
-            entity = self._apply_disambiguation_rules(entity)
-            
-            # Add context if provided
-            if context:
-                entity['context'] = context
-                
-            entities.append(entity)
-        
-        return self._deduplicate_entities(entities)
-    
-    def _apply_disambiguation_rules(self, entity: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply disambiguation rules from config."""
-        rules = self.config.get('entity.disambiguation_rules', {})
-        
-        text = entity['text']
-        if text in rules:
-            entity['canonical_name'] = rules[text]
-            entity['text'] = rules[text]
-        
-        return entity
-    
-    def _deduplicate_entities(self, entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Remove duplicate entities, keeping the longest/most confident."""
-        seen = {}
-        
-        for entity in entities:
-            key = entity['text'].lower()
-            if key not in seen or entity.get('confidence', 1.0) > seen[key].get('confidence', 1.0):
-                seen[key] = entity
-        
-        return list(seen.values())
-    
-    def infer_relationships(self, entities: List[Dict[str, Any]], text: str, metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Infer relationships between entities based on context."""
-        relationships = []
-        
-        # Meeting participant relationships
-        if 'meeting' in metadata.get('title', '').lower() or 'meeting' in text.lower():
-            people = [e for e in entities if e['label'] == 'PERSON']
-            for i, person1 in enumerate(people):
-                for person2 in people[i+1:]:
-                    relationships.append({
-                        'source': person1['text'],
-                        'target': person2['text'],
-                        'type': 'ATTENDED_MEETING_WITH',
-                        'properties': {
-                            'meeting_date': metadata.get('date'),
-                            'meeting_title': metadata.get('title')
-                        }
-                    })
-        
-        # Person-Organization relationships
-        people = [e for e in entities if e['label'] == 'PERSON']
-        orgs = [e for e in entities if e['label'] == 'ORG']
-        
-        for person in people:
-            for org in orgs:
-                # Look for employment/affiliation indicators
-                person_start = person['start']
-                org_start = org['start']
-                
-                # Check if person and org are close in the text
-                distance = abs(person_start - org_start)
-                if distance < 200:  # Within ~200 characters
-                    # Look for work-related keywords between them
-                    text_between = text[min(person_start, org_start):max(person['end'], org['end'])]
-                    work_keywords = ['works at', 'employed by', 'from', 'at', 'with', '(', ')']
-                    
-                    if any(keyword in text_between.lower() for keyword in work_keywords):
-                        relationships.append({
-                            'source': person['text'],
-                            'target': org['text'],
-                            'type': 'AFFILIATED_WITH',
-                            'properties': {
-                                'source_file': metadata.get('file_name'),
-                                'confidence': 0.8
-                            }
-                        })
-        
-        return relationships
+# Note: EntityRelationshipExtractor class removed - consolidated to use EnhancedEntityExtractor only
 
 
 class GraphManager:

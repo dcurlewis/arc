@@ -674,7 +674,18 @@ async def _search_entities(args: Dict[str, Any]) -> List[TextContent]:
             "LOCATION": "Location",
             "PRODUCT": "Product",
             "EVENT": "Event",
-            "CONCEPT": "Concept"
+            "CONCEPT": "Concept",
+            # Domain-specific entity types
+            "PROJECT": "Project",
+            "FEATURE": "Feature", 
+            "TOOL": "Tool",
+            "METRIC": "Metric",
+            "STATUS": "Status",
+            "FRAMEWORK": "Framework",
+            "METHODOLOGY": "Methodology",
+            "JOB_TITLE": "JobTitle",
+            "MEETING_TYPE": "MeetingType",
+            "TIME_PERIOD": "TimePeriod"
         }
         
         # Convert input types to correct Neo4j labels

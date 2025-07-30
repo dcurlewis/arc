@@ -2,6 +2,8 @@
 
 A knowledge management system that turns your markdown documents into a searchable graph database with AI-powered entity extraction and Claude Desktop integration.
 
+This was inspired by a simpler earlier system (which I still predominantly rely on) which I described in my blog [here](https://curlewis.co.nz/2025/07/02/why-your-ai-assistant-forgets-everything-and-why-mine-doesnt/).
+
 ## What it does
 
 ARC processes markdown files to extract **people**, **organisations**, and **projects**, then builds a graph database showing how they're connected. You can search through documents semantically and query relationships between entities.

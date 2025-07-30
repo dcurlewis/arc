@@ -53,6 +53,13 @@ entity:
     "Dan": "Daniel"
     "Sam": "Samuel"
     "Ben": "Benjamin"
+    # Engineering team specific names
+    "Ze": "Ze Chen"
+    "Ze chen": "Ze Chen"
+    "ze chen": "Ze Chen"
+    "Nick": "Nicholas"
+    "Glenn": "Glen"  # Glen not Glenn
+    "Ping": "Peng"  # Common transcription error
     "Nick": "Nicholas"
     "Andy": "Andrew"
     "Steve": "Steven"

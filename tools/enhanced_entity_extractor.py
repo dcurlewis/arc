@@ -444,7 +444,7 @@ class EnhancedEntityExtractor:
         return entity
     
     def _apply_context_disambiguation(self, entity: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply context-based disambiguation rules."""
+        """Apply enhanced context-based disambiguation rules."""
         # File name context
         file_name = context.get('file_name', '')
         if file_name:
@@ -464,12 +464,72 @@ class EnhancedEntityExtractor:
             except:
                 pass
         
-        # Meeting context
-        title = context.get('title', '').lower()
-        if 'meeting' in title or 'call' in title:
-            if entity['label'] == 'PERSON':
-                entity['meeting_participant'] = True
+        # Enhanced document type context
+        document_type = context.get('document_type', 'general')
+        
+        # Person entities in meeting contexts
+        if entity['label'] == 'PERSON':
+            # Check if person is in meeting participants list
+            meeting_participants = context.get('meeting_participants', [])
+            entity_text_lower = entity['text'].lower()
+            
+            for participant in meeting_participants:
+                if (entity_text_lower in participant.lower() or 
+                    participant.lower() in entity_text_lower):
+                    entity['confidence'] = min(1.0, entity.get('confidence', 1.0) + 0.3)
+                    entity['context_boost'] = 'meeting_participant'
+                    entity['meeting_participant'] = True
+                    break
+            
+            # General meeting context boost
+            if document_type in ['meeting', 'one_on_one', 'standup']:
                 entity['confidence'] = min(1.0, entity.get('confidence', 1.0) + 0.1)
+                if 'context_boost' not in entity:
+                    entity['context_boost'] = 'meeting_context'
+        
+        # Project/Organization entities
+        if entity['label'] in ['ORG', 'PRODUCT', 'PROJECT']:
+            project_mentions = context.get('project_mentions', [])
+            entity_text = entity['text']
+            
+            # Check if entity matches known project mentions
+            for project in project_mentions:
+                if (entity_text.lower() in project.lower() or 
+                    project.lower() in entity_text.lower()):
+                    entity['confidence'] = min(1.0, entity.get('confidence', 1.0) + 0.2)
+                    entity['context_boost'] = 'project_mention'
+                    break
+        
+        # Topic relevance boost
+        topics = context.get('topics', [])
+        key_themes = context.get('key_themes', [])
+        entity_text_lower = entity['text'].lower()
+        
+        # Check if entity relates to document topics or themes
+        for topic in topics + key_themes:
+            if (entity_text_lower in topic.lower() or 
+                topic.lower() in entity_text_lower):
+                entity['confidence'] = min(1.0, entity.get('confidence', 1.0) + 0.15)
+                if 'context_boost' not in entity:
+                    entity['context_boost'] = 'topic_relevance'
+                break
+        
+        # Urgency context
+        urgency_indicators = context.get('urgency_indicators', [])
+        if urgency_indicators and entity['label'] in ['PERSON', 'ORG', 'PROJECT']:
+            entity['urgency_context'] = True
+        
+        # Document section context
+        document_sections = context.get('document_sections', [])
+        if document_sections:
+            # If entity appears in a section title, boost confidence
+            for section in document_sections:
+                section_title = section.get('title', '').lower()
+                if entity_text_lower in section_title:
+                    entity['confidence'] = min(1.0, entity.get('confidence', 1.0) + 0.1)
+                    if 'context_boost' not in entity:
+                        entity['context_boost'] = 'section_title'
+                    break
         
         return entity
     
@@ -638,11 +698,16 @@ class EnhancedEntityExtractor:
         return relationships
     
     def _infer_meeting_relationships(self, entities: List[Dict[str, Any]], text: str, metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Infer meeting-related relationships."""
+        """Infer meeting-related relationships using enhanced document context."""
         relationships = []
         
-        # Check if this is meeting content
+        # Enhanced meeting detection using document context
+        document_type = metadata.get('document_type', 'general')
+        meeting_participants = metadata.get('meeting_participants', [])
+        
+        # Check if this is meeting content using enhanced context
         is_meeting = (
+            document_type in ['meeting', 'one_on_one', 'standup', 'retrospective'] or
             'meeting' in metadata.get('title', '').lower() or
             'call' in metadata.get('title', '').lower() or
             any('meeting' in e.get('context_before', '').lower() + e.get('context_after', '').lower() 
@@ -651,19 +716,55 @@ class EnhancedEntityExtractor:
         
         if is_meeting:
             people = [e for e in entities if e['label'] == 'PERSON']
+            
+            # Different relationship types based on document type
+            if document_type == 'one_on_one':
+                relationship_type = 'HAD_ONE_ON_ONE_WITH'
+            elif document_type == 'standup':
+                relationship_type = 'ATTENDED_STANDUP_WITH'
+            elif document_type == 'retrospective':
+                relationship_type = 'ATTENDED_RETROSPECTIVE_WITH'
+            elif document_type in ['meeting', 'sync']:
+                relationship_type = 'ATTENDED_MEETING_WITH'
+            else:
+                relationship_type = 'COLLABORATED_WITH'
+            
             for i, person1 in enumerate(people):
                 for person2 in people[i+1:]:
+                    # Calculate relationship confidence based on enhanced context
+                    base_confidence = min(person1.get('confidence', 1.0), person2.get('confidence', 1.0))
+                    
+                    # Boost confidence if both people are in participant list
+                    confidence_boost = 0.0
+                    person1_in_participants = any(
+                        person1['text'].lower() in p.lower() or p.lower() in person1['text'].lower()
+                        for p in meeting_participants
+                    )
+                    person2_in_participants = any(
+                        person2['text'].lower() in p.lower() or p.lower() in person2['text'].lower()
+                        for p in meeting_participants
+                    )
+                    
+                    if person1_in_participants and person2_in_participants:
+                        confidence_boost = 0.2
+                    elif person1_in_participants or person2_in_participants:
+                        confidence_boost = 0.1
+                    
+                    final_confidence = min(1.0, base_confidence + confidence_boost)
+                    
                     relationships.append({
                         'source': person1.get('canonical_name', person1['text']),
                         'target': person2.get('canonical_name', person2['text']),
                         'source_canonical': person1.get('canonical_name', person1['text']),
                         'target_canonical': person2.get('canonical_name', person2['text']),
-                        'type': 'ATTENDED_MEETING_WITH',
+                        'type': relationship_type,
                         'properties': {
                             'meeting_date': metadata.get('date'),
                             'meeting_title': metadata.get('title'),
+                            'document_type': document_type,
                             'source_file': metadata.get('file_name'),
-                            'confidence': min(person1.get('confidence', 1.0), person2.get('confidence', 1.0))
+                            'confidence': final_confidence,
+                            'context_boost': 'enhanced_meeting_context' if confidence_boost > 0 else None
                         }
                     })
         

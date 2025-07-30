@@ -227,59 +227,7 @@ class DatabaseManager:
                 raise exc
 
 
-class EntityExtractor:
-    """Extracts entities from text using spaCy."""
-    
-    def __init__(self, nlp_model: spacy.Language):
-        self.nlp = nlp_model
-        # Custom entity resolution rules based on your requirements
-        self.name_aliases = {
-            "nick": "nicholas",
-            "ze chen": "ze chen",  # Never abbreviate to "Z"
-            "glenn": "glen",  # Glen not Glenn
-            "jeff zhu": "jeff zhu",  # Different from Geoff Breemer
-            "geoff breemer": "geoff breemer",  # Evaluation team
-            "ping": "peng",  # Common transcription error
-            "artur mogozov": "artur mogozov",  # Not Arthur
-        }
-    
-    def extract_entities(self, text: str) -> Dict[str, List[Dict[str, Any]]]:
-        """Extract entities from text."""
-        doc = self.nlp(text)
-        entities = {
-            'persons': [],
-            'organizations': [],
-            'topics': [],
-            'dates': []
-        }
-        
-        for ent in doc.ents:
-            entity_data = {
-                'text': ent.text,
-                'label': ent.label_,
-                'start': ent.start_char,
-                'end': ent.end_char,
-                'confidence': getattr(ent, 'confidence', 1.0)
-            }
-            
-            if ent.label_ in ['PERSON']:
-                # Apply name normalization
-                normalized_name = self._normalize_name(ent.text.lower())
-                entity_data['normalized'] = normalized_name
-                entities['persons'].append(entity_data)
-            elif ent.label_ in ['ORG', 'COMPANY']:
-                entities['organizations'].append(entity_data)
-            elif ent.label_ in ['DATE', 'TIME']:
-                entities['dates'].append(entity_data)
-            elif ent.label_ in ['TOPIC', 'PRODUCT', 'EVENT']:
-                entities['topics'].append(entity_data)
-        
-        return entities
-    
-    def _normalize_name(self, name: str) -> str:
-        """Normalize person names based on known aliases."""
-        name_lower = name.lower().strip()
-        return self.name_aliases.get(name_lower, name_lower)
+# Note: EntityExtractor class removed - consolidated to use EnhancedEntityExtractor only
 
 
 class ContentHasher:
@@ -314,7 +262,7 @@ class FileProcessor:
         return sorted(markdown_files)
     
     def parse_markdown_metadata(self, file_path: Path) -> Dict[str, Any]:
-        """Parse metadata from markdown file."""
+        """Parse metadata from markdown file with enhanced document context analysis."""
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
@@ -357,7 +305,144 @@ class FileProcessor:
         
         metadata['title'] = title or filename.replace('-', ' ').title()
         
+        # Enhanced document context analysis
+        document_context = self._analyze_document_context(content, metadata)
+        metadata.update(document_context)
+        
         return metadata
+    
+    def _analyze_document_context(self, content: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract rich context from document content structure."""
+        import re
+        
+        lines = content.split('\n')
+        
+        context = {
+            'document_type': None,
+            'meeting_participants': [],
+            'topics': [],
+            'project_mentions': [],
+            'urgency_indicators': [],
+            'key_themes': [],
+            'document_sections': []
+        }
+        
+        # Analyze first 15 lines for context clues
+        header_section = '\n'.join(lines[:15])
+        filename = metadata.get('file_name', '').lower()
+        title = metadata.get('title', '').lower()
+        
+        # Detect document type from headers/structure/filename
+        if (re.search(r'(meeting|call|sync|standup)', header_section, re.IGNORECASE) or
+            'meeting' in filename or 'sync' in filename):
+            context['document_type'] = 'meeting'
+        elif (re.search(r'(1:1|one.on.one|catch.up)', header_section, re.IGNORECASE) or
+              '1on1' in filename or 'one-on-one' in filename):
+            context['document_type'] = 'one_on_one'
+        elif (re.search(r'(design|spec|architecture|rfc)', header_section, re.IGNORECASE) or
+              'design' in filename or 'spec' in filename):
+            context['document_type'] = 'design_doc'
+        elif (re.search(r'(standup|stand.up|daily)', header_section, re.IGNORECASE) or
+              'standup' in filename):
+            context['document_type'] = 'standup'
+        elif (re.search(r'(retrospective|retro|post.mortem)', header_section, re.IGNORECASE) or
+              'retro' in filename):
+            context['document_type'] = 'retrospective'
+        else:
+            context['document_type'] = 'general'
+        
+        # Extract participants from header (common patterns)
+        participant_patterns = [
+            r'(?:with|attendees?|participants?):\s*([^\n]+)',
+            r'(?:present|attending):\s*([^\n]+)',
+            r'(?:people|folks|team):\s*([^\n]+)',
+        ]
+        
+        for pattern in participant_patterns:
+            matches = re.findall(pattern, header_section, re.IGNORECASE)
+            for match in matches:
+                # Parse comma or 'and' separated names
+                names = re.split(r',|\sand\s', match)
+                cleaned_names = [name.strip() for name in names if len(name.strip()) > 2]
+                context['meeting_participants'].extend(cleaned_names)
+        
+        # Remove duplicates and clean up participants
+        context['meeting_participants'] = list(set([
+            name for name in context['meeting_participants'] 
+            if len(name) > 2 and not re.match(r'^[^a-zA-Z]*$', name)
+        ]))
+        
+        # Extract topics from headers and bullet points
+        for line in lines[:20]:  # First 20 lines
+            line = line.strip()
+            if line.startswith('##') and len(line) > 3:
+                topic = line.lstrip('#').strip()
+                if len(topic) > 3:
+                    context['topics'].append(topic)
+            elif line.startswith('- ') and len(line) > 5:
+                topic = line[2:].strip()
+                if len(topic) > 3 and not re.match(r'^[^a-zA-Z]*$', topic):
+                    context['topics'].append(topic)
+        
+        # Extract project mentions from content
+        project_patterns = [
+            r'\b([A-Z][a-z]+ [A-Z][a-z]+)\b',  # "Project Name" pattern
+            r'\b([A-Z]{2,})\b',  # Acronyms like "API", "GPU"
+        ]
+        
+        for pattern in project_patterns:
+            matches = re.findall(pattern, content)
+            for match in matches:
+                if isinstance(match, tuple):
+                    match = match[0]
+                if (len(match) > 2 and 
+                    match not in context['project_mentions'] and
+                    not re.match(r'^(THE|AND|FOR|WITH|FROM|THIS|THAT)$', match.upper())):
+                    context['project_mentions'].append(match)
+        
+        # Extract urgency/priority indicators
+        urgency_patterns = [
+            r'\b(urgent|asap|critical|high.priority|blocker|blocked)\b',
+            r'\b(deadline|due|needs.to.be.done)\b',
+            r'\b(emergency|crisis|immediate)\b'
+        ]
+        
+        for pattern in urgency_patterns:
+            if re.search(pattern, content, re.IGNORECASE):
+                context['urgency_indicators'].append('high_priority')
+                break
+        
+        # Extract key themes from frequent words (simple approach)
+        words = re.findall(r'\b[a-zA-Z]{4,}\b', content.lower())
+        word_freq = {}
+        for word in words:
+            if word not in ['this', 'that', 'with', 'from', 'they', 'were', 'been', 'have', 'will', 'would', 'could', 'should']:
+                word_freq[word] = word_freq.get(word, 0) + 1
+        
+        # Get top 5 most frequent meaningful words
+        top_themes = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:5]
+        context['key_themes'] = [theme[0] for theme in top_themes if theme[1] > 2]
+        
+        # Extract document sections (headers)
+        current_section = None
+        for line in lines:
+            if line.startswith('#'):
+                level = len(line) - len(line.lstrip('#'))
+                section_title = line.lstrip('#').strip()
+                if section_title:
+                    context['document_sections'].append({
+                        'level': level,
+                        'title': section_title
+                    })
+        
+        # Limit arrays to reasonable sizes
+        context['meeting_participants'] = context['meeting_participants'][:10]
+        context['topics'] = context['topics'][:10]
+        context['project_mentions'] = context['project_mentions'][:15]
+        context['key_themes'] = context['key_themes'][:8]
+        context['document_sections'] = context['document_sections'][:20]
+        
+        return context
 
 
 # Global instances (initialized when needed)
@@ -381,10 +466,7 @@ def get_db_manager() -> DatabaseManager:
     return _db_manager
 
 
-def get_entity_extractor() -> EntityExtractor:
-    """Get entity extractor instance."""
-    db = get_db_manager()
-    return EntityExtractor(db.nlp)
+# Note: get_entity_extractor() function removed - use EnhancedEntityExtractor directly
 
 
 def cleanup():
