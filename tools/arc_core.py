@@ -16,16 +16,17 @@ from sentence_transformers import SentenceTransformer
 import yaml
 from dotenv import load_dotenv
 
+# Load .env file from the project root at the top of the module
+# This ensures environment variables are set before any other code runs.
+dotenv_path = Path(__file__).parent.parent / '.env'
+if dotenv_path.is_file():
+    load_dotenv(dotenv_path=dotenv_path)
+
 
 class ARCConfig:
     """Configuration management for ARC system."""
     
     def __init__(self, config_path: Optional[str] = None):
-        # Load environment variables from .env file
-        env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
-        if os.path.exists(env_path):
-            load_dotenv(env_path)
-        
         self.config_path = config_path or os.path.join(os.path.dirname(__file__), "..", "config.yaml")
         self.config = self._load_config()
     
@@ -103,6 +104,17 @@ class DatabaseManager:
     
     def __init__(self, config: ARCConfig):
         self.config = config
+
+        self.neo4j_uri = self.config.get('neo4j.uri', 'neo4j://localhost:7687')
+        self.neo4j_user = self.config.get('neo4j.auth.username', 'neo4j')
+        # self.neo4j_password = os.getenv('NEO4J_PASSWORD') # Defer loading to property
+        self.neo4j_db = self.config.get('neo4j.database', 'arc')
+        self.neo4j_embedded = self.config.get('neo4j.embedded', False) # Set to false
+        self.neo4j_dir = Path(self.config.get('neo4j.home', 'data/neo4j'))
+        
+        self.chroma_path = self.config.get('chromadb.path', 'data/chroma')
+        self.embedding_model_name = self.config.get('embeddings.model', 'sentence-transformers/all-MiniLM-L6-v2')
+        self.chromadb_collection_documents = self.config.get('chromadb.collection_documents', 'documents')
         self._neo4j_driver = None
         self._chromadb_client = None
         self._nlp = None
@@ -110,26 +122,46 @@ class DatabaseManager:
     
     @property
     def neo4j(self) -> neo4j.Driver:
-        """Get Neo4j driver instance."""
+        """Return a real Neo4j driver instance.
+
+        This method does *not* provide an in-memory fallback – if the
+        connection or authentication fails the exception will propagate so
+        that tests or calling code fail loudly (as they should when the real
+        database isn’t available).
+        """
         if self._neo4j_driver is None:
             from neo4j import GraphDatabase
-            uri = self.config.get('neo4j.uri', 'bolt://localhost:7687')
-            
-            # Always use authentication - Neo4j requires it
-            auth = (
-                self.config.get('neo4j.user', 'neo4j'),
-                self.config.get('neo4j.password', 'neo4j')
+
+            # Prefer environment variable over config so developers can simply
+            # `export NEO4J_PASSWORD=…`.
+            password = (
+                os.getenv("NEO4J_PASSWORD")
+                or self.config.get("neo4j.password")
+                or self.config.get("neo4j.auth.password")
             )
-            self._neo4j_driver = GraphDatabase.driver(uri, auth=auth)
+
+            if not password:
+                raise ValueError(
+                    "Neo4j password not provided. Set NEO4J_PASSWORD env var or configure 'neo4j.password' in config.yaml or test fixture."
+                )
+
+            auth = (self.neo4j_user, password)
+            self._neo4j_driver = GraphDatabase.driver(self.neo4j_uri, auth=auth)
+
         return self._neo4j_driver
     
     @property
     def chromadb(self) -> chromadb.ClientAPI:
         """Get ChromaDB client instance."""
         if self._chromadb_client is None:
-            persist_directory = self.config.get('chromadb.path', './data/chromadb')
-            os.makedirs(persist_directory, exist_ok=True)
-            self._chromadb_client = chromadb.PersistentClient(path=persist_directory)
+            # Resolve path relative to project root (two levels up from this file)
+            raw_path = self.config.get('chromadb.path', 'data/chroma')
+            path_obj = Path(raw_path)
+            if not path_obj.is_absolute():
+                project_root = Path(__file__).parent.parent  # arc/
+                path_obj = project_root / path_obj
+            path_obj.mkdir(parents=True, exist_ok=True)
+            self._chromadb_client = chromadb.PersistentClient(path=str(path_obj))
         return self._chromadb_client
     
     @property
@@ -142,7 +174,11 @@ class DatabaseManager:
     
     @property
     def embeddings(self) -> SentenceTransformer:
-        """Get sentence transformer model."""
+        """Return the production SentenceTransformer model.
+
+        No stub fallback – if the model cannot be downloaded or loaded the
+        exception will surface so that tests fail, signalling a real problem.
+        """
         if self._embeddings_model is None:
             model_name = self.config.get('embeddings.model', 'sentence-transformers/all-MiniLM-L6-v2')
             self._embeddings_model = SentenceTransformer(model_name)
@@ -152,6 +188,43 @@ class DatabaseManager:
         """Close all database connections."""
         if self._neo4j_driver:
             self._neo4j_driver.close()
+
+    def get_neo4j_session(self, **kwargs):
+        """Return a Neo4j session. This is a thin wrapper around ``self.neo4j.session`` so
+        that tests can simply do ``with db_manager.get_neo4j_session():`` without
+        accessing the underlying driver directly.
+        """
+        return self.neo4j.session(**kwargs)
+
+    @property
+    def chromadb_manager(self):
+        """Backwards-compatibility alias expected by older tests. Returns the
+        underlying ChromaDB client instance.
+        """
+        return self.chromadb
+
+    def clear_all_data(self, force: bool = False):
+        """Utility to wipe all data from Neo4j and ChromaDB during tests.
+
+        Args:
+            force: If ``True`` swallow any exception that occurs (useful in CI
+                   when the database might be mocked). If ``False`` the first
+                   exception encountered will be re-raised.
+        """
+        # Wipe Neo4j
+        try:
+            with self.neo4j.session() as session:
+                session.run("MATCH (n) DETACH DELETE n")
+        except Exception as exc:
+            if not force:
+                raise exc
+        # Wipe all ChromaDB collections
+        try:
+            for col in self.chromadb.list_collections():
+                self.chromadb.delete_collection(name=col.name)
+        except Exception as exc:
+            if not force:
+                raise exc
 
 
 class EntityExtractor:
@@ -228,7 +301,7 @@ class ContentHasher:
 class FileProcessor:
     """Processes markdown files from the import directory."""
     
-    def __init__(self, config: ARCConfig):
+    def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.source_dir = Path(config.get('import.source_dir', './import'))
     

@@ -12,6 +12,10 @@ from typing import Dict, List, Any, Optional, Tuple, Set
 from datetime import datetime
 from dataclasses import dataclass
 
+from bs4 import BeautifulSoup
+from langchain_text_splitters import MarkdownTextSplitter
+from spacy.lang.en import English
+
 from arc_core import get_config, get_db_manager, FileProcessor, EntityExtractor, ContentHasher
 from enhanced_entity_extractor import EnhancedEntityExtractor
 
@@ -34,6 +38,38 @@ class ImportStats:
     def __post_init__(self):
         if self.errors is None:
             self.errors = []
+
+
+def clear_all_databases(db_manager):
+    """Clear all data from Neo4j and ChromaDB."""
+    logger.info("🗑️  Clearing all databases...")
+
+    # Clear Neo4j
+    try:
+        with db_manager.neo4j.session() as session:
+            # Delete all nodes and relationships
+            session.run("MATCH (n) DETACH DELETE n")
+            logger.info("✅ Neo4j database cleared")
+    except Exception as e:
+        logger.error(f"❌ Error clearing Neo4j: {e}")
+        raise
+
+    # Clear ChromaDB by deleting all collections
+    try:
+        client = db_manager.chromadb
+        collections = client.list_collections()
+        if not collections:
+            logger.info("✅ ChromaDB is already empty.")
+        else:
+            for collection in collections:
+                client.delete_collection(name=collection.name)
+                logger.debug(f"Deleted ChromaDB collection: {collection.name}")
+            logger.info(f"✅ Cleared {len(collections)} ChromaDB collections.")
+    except Exception as e:
+        logger.error(f"❌ Error clearing ChromaDB: {e}")
+        raise
+
+    logger.info("🎯 All databases cleared successfully")
 
 
 class EntityRelationshipExtractor:
@@ -188,13 +224,16 @@ class GraphManager:
         """Create entity node in graph."""
         with self.driver.session() as session:
             entity_type = self._get_entity_type(entity['label'])
-            node_id = self._generate_node_id(entity['text'], entity_type)
+            
+            # Use canonical name for ID generation to ensure consistent entity resolution
+            canonical_name = entity.get('canonical_name', entity['text'])
+            node_id = self._generate_node_id(canonical_name, entity_type)
             
             # Prepare properties  
             properties = {
                 'id': node_id,
                 'name': entity['text'],
-                'canonical_name': entity.get('canonical_name', entity['text']),
+                'canonical_name': canonical_name,
                 'entity_type': entity['label'],
                 'created_at': metadata.get('created_at', datetime.now().isoformat()),
                 'modified_at': metadata.get('modified_at', datetime.now().isoformat()),
@@ -257,27 +296,40 @@ class GraphManager:
     def create_relationship(self, relationship: Dict[str, Any]) -> bool:
         """Create relationship between entities."""
         with self.driver.session() as session:
-            source_id = self._generate_node_id(relationship['source'], 'Person')
-            target_id = self._generate_node_id(relationship['target'], 'Person')
+            # Use canonical names if available for consistent entity resolution
+            source_name = relationship.get('source_canonical', relationship['source'])
+            target_name = relationship.get('target_canonical', relationship['target'])
+            
+            source_id = self._generate_node_id(source_name, 'Person')
+            target_id = self._generate_node_id(target_name, 'Person')
             rel_type = relationship['type']
             properties = relationship.get('properties', {})
             
-            # Add metadata
-            properties.update({
-                'created_at': datetime.now().isoformat(),
-                'confidence': properties.get('confidence', 1.0)
-            })
+            # Prepare properties for MERGE
+            confidence = properties.get('confidence', 1.0)
+            source_file = properties.get('source_file', '')
             
             query = f"""
             MATCH (a {{id: $source_id}})
             MATCH (b {{id: $target_id}})
             MERGE (a)-[r:{rel_type}]->(b)
-            SET r += $properties, r.updated_at = datetime()
+            ON CREATE SET 
+                r.created_at = datetime(),
+                r.confidence = $confidence,
+                r.source_file = $source_file
+            ON MATCH SET 
+                r.updated_at = datetime(),
+                r.confidence = CASE WHEN $confidence > r.confidence THEN $confidence ELSE r.confidence END
             RETURN r
             """
             
             try:
-                result = session.run(query, source_id=source_id, target_id=target_id, properties=properties)
+                result = session.run(query, 
+                    source_id=source_id, 
+                    target_id=target_id, 
+                    confidence=confidence,
+                    source_file=source_file
+                )
                 return result.single() is not None
             except Exception as e:
                 logger.error(f"Failed to create relationship {rel_type} between {relationship['source']} and {relationship['target']}: {e}")
@@ -324,79 +376,30 @@ class GraphManager:
         return f"{entity_type.lower()}_{ContentHasher.hash_content(normalized)[:12]}"
 
 
-class VectorManager:
-    """Manages ChromaDB vector operations for import."""
-    
-    def __init__(self, db_manager):
-        self.db_manager = db_manager
-        self.client = db_manager.chromadb
-        self.embedding_model = db_manager.embeddings
-    
-    def index_document(self, metadata: Dict[str, Any]) -> bool:
-        """Index document content in ChromaDB."""
-        try:
-            # Get or create collection
-            collection_name = self.db_manager.config.get('chromadb.document_collection', 'documents')
-            collection = self.client.get_or_create_collection(collection_name)
-            
-            # Prepare document for indexing
-            doc_id = metadata['content_hash']
-            content = metadata['content']
-            
-            # Create metadata for ChromaDB (must be JSON serializable)
-            # Convert datetime strings to timestamps for temporal filtering
-            created_at_ts = None
-            modified_at_ts = None
-            
-            if metadata.get('created_at'):
-                try:
-                    created_at_dt = datetime.fromisoformat(metadata['created_at'])
-                    created_at_ts = created_at_dt.timestamp()
-                except (ValueError, TypeError):
-                    pass
-            
-            if metadata.get('modified_at'):
-                try:
-                    modified_at_dt = datetime.fromisoformat(metadata['modified_at'])
-                    modified_at_ts = modified_at_dt.timestamp()
-                except (ValueError, TypeError):
-                    pass
-            
-            chroma_metadata = {
-                'file_name': metadata['file_name'],
-                'title': metadata.get('title', ''),
-                'date': metadata.get('date'),
-                'file_size': metadata.get('file_size', 0),
-                'created_at': created_at_ts,
-                'modified_at': modified_at_ts,
-                'created_at_iso': metadata.get('created_at'),
-                'modified_at_iso': metadata.get('modified_at')
-            }
-            
-            # Remove None values
-            chroma_metadata = {k: v for k, v in chroma_metadata.items() if v is not None}
-            
-            # Add to collection
-            collection.add(
-                documents=[content],
-                metadatas=[chroma_metadata],
-                ids=[doc_id]
-            )
-            
-            logger.debug(f"Indexed document: {metadata['file_name']}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to index document {metadata.get('file_name', 'unknown')}: {e}")
-            return False
+# VectorManager class has been removed – enhanced embedding generator is now
+# the single source of truth for all ChromaDB writes.
 
 
 class ARCImporter:
     """Main import orchestrator."""
     
     def __init__(self, config=None):
-        self.config = config or get_config()
-        self.db_manager = get_db_manager()
+        # Provide flexible initialization so existing tests can pass either an
+        # ``ARCConfig`` instance *or* a fully-constructed ``DatabaseManager``.
+        from arc_core import ARCConfig  # Avoid name collision; we'll duck-type DB manager
+
+        # ------------------------------------------------------------------
+        # Flexible configuration handling
+        # ------------------------------------------------------------------
+        if config is not None and all(hasattr(config, attr) for attr in ("chromadb", "neo4j", "config")):
+            # Looks like a DatabaseManager-like object
+            self.db_manager = config  # type: ignore[assignment]
+            self.config = config.config  # type: ignore[attr-defined]
+        else:
+            # Standard path – we either received an ARCConfig or nothing.
+            self.config = config or get_config()
+            # If we got an ARCConfig we still need a DB manager.
+            self.db_manager = get_db_manager()
         self.file_processor = FileProcessor(self.config)
         
         # Load enhanced entity configuration
@@ -404,11 +407,18 @@ class ARCImporter:
         self.entity_extractor = EnhancedEntityExtractor(enhanced_config)
         
         self.graph_manager = GraphManager(self.db_manager)
-        self.vector_manager = VectorManager(self.db_manager)
-        
-        # Initialize enhanced embedding system
+        # Initialize enhanced embedding system (sole vector indexing path)
         from enhanced_embeddings import create_enhanced_embedding_system
         self.embedding_generator, self.query_interface = create_enhanced_embedding_system(self.db_manager)
+
+        # Resolve backup directory path once
+        raw_backup = self.config.get('import.backup_dir', 'backups')
+        backup_path = Path(raw_backup)
+        if not backup_path.is_absolute():
+            project_root = Path(__file__).parent.parent  # arc/
+            backup_path = project_root / backup_path
+        backup_path.mkdir(parents=True, exist_ok=True)
+        self.backup_dir = backup_path
         
         # Initialize constraints
         self.graph_manager.create_constraints()
@@ -445,40 +455,6 @@ class ARCImporter:
         logger.warning("No enhanced entity config found, using basic configuration")
         logger.info("To use enhanced entity extraction, copy config/enhanced_entity_config.template.yaml to config/enhanced_entity_config.yaml")
         return self.config
-    
-    def clear_databases(self):
-        """Clear all data from Neo4j and ChromaDB."""
-        logger.info("🗑️  Clearing all databases...")
-        
-        # Clear Neo4j
-        try:
-            with self.db_manager.neo4j.session() as session:
-                # Delete all nodes and relationships
-                session.run("MATCH (n) DETACH DELETE n")
-                logger.info("✅ Neo4j database cleared")
-        except Exception as e:
-            logger.error(f"❌ Error clearing Neo4j: {e}")
-            raise
-        
-        # Clear ChromaDB
-        try:
-            client = self.db_manager.chromadb
-            # Get collection name from config
-            collection_name = self.config.get('chromadb.collection', 'arc_documents')
-            
-            try:
-                # Try to delete the collection if it exists
-                client.delete_collection(collection_name)
-                logger.info("✅ ChromaDB collection deleted")
-            except Exception:
-                # Collection might not exist, which is fine
-                logger.info("✅ ChromaDB collection was already empty or non-existent")
-                
-        except Exception as e:
-            logger.error(f"❌ Error clearing ChromaDB: {e}")
-            raise
-        
-        logger.info("🎯 All databases cleared successfully")
     
     def import_file(self, file_path: Path) -> Tuple[bool, Dict[str, Any]]:
         """Import a single markdown file."""
@@ -520,10 +496,7 @@ class ARCImporter:
             # Link entities to document
             self.graph_manager.link_entities_to_document(entity_ids, doc_id)
             
-            # Index in vector store (basic)
-            self.vector_manager.index_document(metadata)
-            
-            # Index with enhanced embeddings
+            # Index document and derived views using enhanced embeddings only
             self.embedding_generator.index_enhanced_document(
                 metadata['content'], entities, relationships, metadata
             )
@@ -570,6 +543,14 @@ class ARCImporter:
         
         logger.info(f"Import complete: {stats.files_processed} processed, {stats.files_skipped} skipped, {len(stats.errors)} errors")
         return stats
+
+    # ------------------------------------------------------------------
+    # Backwards-compatibility helpers
+    # ------------------------------------------------------------------
+    def import_documents(self, limit: Optional[int] = None) -> ImportStats:
+        """Alias for :py:meth:`import_directory` kept to avoid breaking older
+        tests and scripts that expect an ``import_documents`` method."""
+        return self.import_directory(limit)
     
     def _is_file_already_processed(self, content_hash: str) -> bool:
         """Check if file with this content hash was already processed."""
@@ -589,18 +570,30 @@ def main():
     parser.add_argument('--limit', type=int, help='Limit number of files to process')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose logging')
     parser.add_argument('--clear', action='store_true', help='Clear all existing data before importing')
+    parser.add_argument('--reindex', action='store_true', help='Re-index documents even if already processed')
     
     args = parser.parse_args()
     
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
+    # Clear databases if requested, BEFORE initializing the importer
+    if args.clear:
+        logger.info("Clear flag detected. Initializing DB manager for clearing...")
+        db_manager = get_db_manager()
+        clear_all_databases(db_manager)
+
     # Initialize importer
     importer = ARCImporter()
-    
-    # Clear databases if requested
-    if args.clear:
-        importer.clear_databases()
+
+    # If reindex flag set, monkey-patch the duplicate check to always return False
+    if args.reindex:
+        logger.warning("--reindex flag detected: importer will ignore existing content hashes and re-index all files")
+
+        def _always_false(_self, _hash):
+            return False
+
+        importer._is_file_already_processed = _always_false.__get__(importer, ARCImporter)
     
     # Run import
     stats = importer.import_directory(limit=args.limit)

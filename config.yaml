@@ -3,16 +3,15 @@
 
 # Neo4j Graph Database Configuration
 neo4j:
-  uri: "neo4j://localhost:7687"
-  embedded: true
-  database: "arc"
-  # auth:
-  #   username: "neo4j"
-  #   password: "your_password"
+  uri: "neo4j://[::1]:7687"
+  database: "neo4j"
+  auth:
+    username: "neo4j"
+    # The password is now stored in the root .env file
 
 # ChromaDB Vector Database Configuration  
 chromadb:
-  path: "./data/chromadb"
+  path: "data/chroma"
   collection_documents: "documents"
   collection_summaries: "summaries"
 
@@ -30,7 +29,7 @@ embeddings:
 
 # File Import Configuration
 import:
-  source_dir: "../import"  # Adjusted for running from tools/ directory
+  source_dir: "./import"  # Fixed for running from root directory
   backup_dir: "./backups"
   # File patterns to include/exclude
   patterns:

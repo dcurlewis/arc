@@ -262,11 +262,13 @@ class EnhancedEntityExtractor:
         
         # Extract standard entities
         for ent in doc.ents:
-            if len(ent.text.strip()) < 2:
+            # Clean and validate entity text
+            cleaned_text = self._clean_entity_text(ent.text)
+            if not self._is_valid_entity(cleaned_text, ent.label_):
                 continue
             
             entity = {
-                'text': ent.text.strip(),
+                'text': cleaned_text,
                 'label': ent.label_,
                 'start': ent.start_char,
                 'end': ent.end_char,
@@ -292,6 +294,114 @@ class EnhancedEntityExtractor:
         entities = self._apply_confidence_scoring(entities, text, context)
         
         return entities
+    
+    def _clean_entity_text(self, text: str) -> str:
+        """Clean entity text of formatting artifacts and unwanted characters."""
+        if not text:
+            return ""
+        
+        # Remove leading/trailing whitespace
+        cleaned = text.strip()
+        
+        # Remove newlines and replace with spaces
+        cleaned = re.sub(r'\s*\n\s*', ' ', cleaned)
+        
+        # Remove common formatting artifacts
+        cleaned = re.sub(r'^[-*•\s]+', '', cleaned)  # Remove leading bullets, dashes, asterisks
+        cleaned = re.sub(r'[-*•\s]+$', '', cleaned)  # Remove trailing bullets, dashes, asterisks
+        
+        # Remove incomplete fragments that end with " - " or " - *"
+        cleaned = re.sub(r'\s+-\s*\*?\s*$', '', cleaned)
+        
+        # Remove status fragments like "Status - Still" or "Status - Complete"
+        cleaned = re.sub(r'\s+Status\s+-\s+\w+', '', cleaned, flags=re.IGNORECASE)
+        
+        # Remove fragments with numbers/ordinals that are clearly not names
+        cleaned = re.sub(r'^(.*?)\s+[0-9]+\s*$', r'\1', cleaned)  # "Greg 4" -> "Greg"
+        cleaned = re.sub(r'^(.*?)\s+\d+(st|nd|rd|th)\s*$', r'\1', cleaned)  # "Greg 2nd" -> "Greg"
+        
+        # Remove fragments with common meeting/action words
+        action_fragments = [
+            r'\s*-\s*(Would|Could|Should|Will|Can)\b.*$',
+            r'\s*-\s*(Book|Loop|Two|Three|Four|Five)\s*$',
+            r'\s*-\s*(User|Admin|Manager|Lead)\s*$',
+            r'\s*-\s*(Meeting|Call|Discussion|Update)\s*$',
+            r'\s*-\s*(Still|Done|Complete|Pending)\s*$',
+            r'\s*-\s*(High|Low|Medium|Include|Product|GPU|Cluster|System|Platform)\b.*$',
+            r'\s*-\s*(Planning|Discussion|Review|Analysis|Design|Implementation)\b.*$'
+        ]
+        
+        for pattern in action_fragments:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        
+        # Remove common partial phrases that are artifacts
+        artifact_patterns = [
+            r'\s+-\s*$',  # trailing " - "
+            r'\s+\*\s*$',  # trailing " * "
+            r'^\*\s+',     # leading "* "
+            r'\s+\([^)]*$',  # incomplete parentheses
+            r'^[^a-zA-Z0-9]+',  # leading non-alphanumeric
+        ]
+        
+        for pattern in artifact_patterns:
+            cleaned = re.sub(pattern, '', cleaned)
+        
+        # Final cleanup: normalize whitespace
+        cleaned = re.sub(r'\s+', ' ', cleaned)
+        
+        return cleaned.strip()
+    
+    def _is_valid_entity(self, text: str, label: str) -> bool:
+        """Validate if an entity text is worth keeping."""
+        if not text or len(text.strip()) < 2:
+            return False
+        
+        # Skip if it's just punctuation or formatting
+        if re.match(r'^[^\w\s]*$', text):
+            return False
+        
+        # Skip very short person names that are likely artifacts
+        if label == 'PERSON' and len(text) < 3:
+            return False
+        
+        # Skip if it contains newlines (indicates formatting issues)
+        if '\n' in text:
+            return False
+        
+        # Skip common artifacts and non-names
+        artifact_words = {
+            'status', 'still', 'complete', 'done', 'pending', 'notes', 'update', 'updates',
+            'meeting', 'discussion', 'call', 'sync', 'follow', 'followup', 'action', 'actions',
+            'would', 'could', 'should', 'will', 'can', 'book', 'loop', 'two', 'three', 'four',
+            'reconvene', 'overestimating', 'dynamic', 'mid-july', 'user', 'admin'
+        }
+        
+        if text.lower() in artifact_words:
+            return False
+        
+        # Skip if it's clearly a partial phrase or action item
+        if re.search(r'\b(would|could|should|will|can|book|loop|reconvene|overestimating|high|low|medium|include|product|gpu|cluster|system|platform|planning|discussion|review|analysis|design|implementation)\b', text, re.IGNORECASE):
+            return False
+        
+        # Skip if it contains multiple consecutive spaces or weird formatting
+        if '  ' in text or re.search(r'[^\w\s\.-]', text):
+            return False
+        
+        # Skip if it ends with numbers (likely partial extraction)
+        if re.search(r'\d+\s*$', text):
+            return False
+        
+        # For PERSON entities, be more strict about what qualifies as a name
+        if label == 'PERSON':
+            # Skip if it contains action words that indicate it's not a person name
+            if re.search(r'\b(dynamic|user|admin|manager|lead|status|meeting|call|high|low|medium|include|product|gpu|cluster|system|platform)\b', text, re.IGNORECASE):
+                return False
+            
+            # Skip if it contains technical/project suffixes after a dash
+            if re.search(r'\s+-\s+(high|low|medium|gpu|cluster|system|platform|project|feature|update|planning)', text, re.IGNORECASE):
+                return False
+        
+        return True
     
     def _apply_enhanced_disambiguation(self, entity: Dict[str, Any], doc, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Apply enhanced disambiguation rules."""
@@ -546,12 +656,14 @@ class EnhancedEntityExtractor:
                     relationships.append({
                         'source': person1.get('canonical_name', person1['text']),
                         'target': person2.get('canonical_name', person2['text']),
+                        'source_canonical': person1.get('canonical_name', person1['text']),
+                        'target_canonical': person2.get('canonical_name', person2['text']),
                         'type': 'ATTENDED_MEETING_WITH',
                         'properties': {
                             'meeting_date': metadata.get('date'),
                             'meeting_title': metadata.get('title'),
-                            'confidence': min(person1.get('confidence', 1.0), person2.get('confidence', 1.0)),
-                            'created_at': datetime.now().isoformat()
+                            'source_file': metadata.get('file_name'),
+                            'confidence': min(person1.get('confidence', 1.0), person2.get('confidence', 1.0))
                         }
                     })
         
@@ -573,6 +685,8 @@ class EnhancedEntityExtractor:
                     relationships.append({
                         'source': person.get('canonical_name', person['text']),
                         'target': org.get('canonical_name', org['text']),
+                        'source_canonical': person.get('canonical_name', person['text']),
+                        'target_canonical': org.get('canonical_name', org['text']),
                         'type': 'AFFILIATED_WITH',
                         'properties': {
                             'source_file': metadata.get('file_name'),

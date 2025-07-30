@@ -30,12 +30,13 @@ class EnhancedEmbeddingGenerator:
         self.embedding_model = db_manager.embeddings
         self.chromadb_client = db_manager.chromadb
         
-        # Create specialized collections
+        # Create specialized collections using config values
+        documents_collection = db_manager.config.get('chromadb.collection_documents', 'documents')
         self.collections = {
-            'documents': self._get_or_create_collection('arc_documents'),
-            'entities': self._get_or_create_collection('arc_entities'),
-            'relationships': self._get_or_create_collection('arc_relationships'),
-            'hybrid': self._get_or_create_collection('arc_hybrid')
+            'documents': self._get_or_create_collection(documents_collection),
+            'entities': self._get_or_create_collection(f"{documents_collection}_entities"),
+            'relationships': self._get_or_create_collection(f"{documents_collection}_relationships"),
+            'hybrid': self._get_or_create_collection(f"{documents_collection}_hybrid")
         }
         
         logger.info("Initialized Enhanced Embedding Generator")
@@ -397,7 +398,22 @@ class EnhancedEmbeddingGenerator:
                     chroma_metadata[f"{time_field}_iso"] = metadata[time_field]
                 except (ValueError, TypeError):
                     pass
-        
+
+        # Ensure created_at_ts exists for temporal filtering
+        if 'created_at_ts' not in chroma_metadata:
+            ts_source = (
+                metadata.get('date') or
+                metadata.get('created_at_iso') or
+                metadata.get('created_at')
+            )
+            if ts_source:
+                try:
+                    dt = datetime.fromisoformat(ts_source[:26])  # trim possible Z / offset for fromisoformat
+                    chroma_metadata['created_at_ts'] = dt.timestamp()
+                    chroma_metadata.setdefault('created_at_iso', dt.isoformat())
+                except (ValueError, TypeError):
+                    logger.warning(f"⚠️ Unable to derive created_at_ts from '{ts_source}'")
+
         # Entity and relationship counts
         chroma_metadata['entity_count'] = len(entities)
         chroma_metadata['relationship_count'] = len(relationships)
@@ -555,71 +571,87 @@ class EnhancedQueryInterface:
         Returns:
             Temporally filtered results
         """
-        query_embedding = self.embedding_model.encode([query])[0]
+        logger.info(f"🔍 temporal_search method called:")
+        logger.info(f"   - query: {query}")
+        logger.info(f"   - start_date: {start_date}")
+        logger.info(f"   - end_date: {end_date}")
+        logger.info(f"   - search_type: {search_type}")
+        logger.info(f"   - limit: {limit}")
         
-        # Build temporal filters - ChromaDB doesn't support multiple operators per field
-        # We'll apply filters one at a time or use $and operator if available
+        try:
+            query_embedding = self.embedding_model.encode([query])[0]
+            logger.info(f"✅ Query embedding generated: shape {query_embedding.shape}")
+        except Exception as embed_e:
+            logger.error(f"❌ Query embedding failed: {embed_e}")
+            raise
+        
+        # Build temporal filters - ChromaDB supports $and for multiple conditions
         filters = {}
         if start_date and end_date:
             try:
                 start_ts = datetime.fromisoformat(start_date).timestamp()
-                end_ts = datetime.fromisoformat(end_date).timestamp()
-                # For range queries, we'll filter on the Python side
-                filters = {}  # Let ChromaDB return all, filter in Python
-            except ValueError:
-                logger.warning(f"Invalid date format: {start_date} or {end_date}")
+                end_dt = datetime.fromisoformat(end_date).replace(hour=23, minute=59, second=59, microsecond=999999)
+                end_ts = end_dt.timestamp()
+                logger.info(f"📅 Date range timestamps: {start_ts} to {end_ts}")
+                filters = {
+                    "$and": [
+                        {"created_at_ts": {"$gte": start_ts}},
+                        {"created_at_ts": {"$lte": end_ts}}
+                    ]
+                }
+                logger.info(f"🔧 Using ChromaDB $and filter for date range: {filters}")
+            except ValueError as date_e:
+                logger.warning(f"⚠️ Invalid date format: {start_date} or {end_date} - {date_e}")
         elif start_date:
             try:
                 start_ts = datetime.fromisoformat(start_date).timestamp()
                 filters['created_at_ts'] = {'$gte': start_ts}
+                logger.info(f"📅 Start date filter: created_at_ts >= {start_ts}")
             except ValueError:
-                logger.warning(f"Invalid start_date format: {start_date}")
+                logger.warning(f"⚠️ Invalid start_date format: {start_date}")
         elif end_date:
             try:
-                end_ts = datetime.fromisoformat(end_date).timestamp()
+                end_dt = datetime.fromisoformat(end_date).replace(hour=23, minute=59, second=59, microsecond=999999)
+                end_ts = end_dt.timestamp()
                 filters['created_at_ts'] = {'$lte': end_ts}
+                logger.info(f"📅 End date filter: created_at_ts <= {end_ts}")
             except ValueError:
-                logger.warning(f"Invalid end_date format: {end_date}")
+                logger.warning(f"⚠️ Invalid end_date format: {end_date}")
         
         if search_type not in self.collections:
+            logger.warning(f"⚠️ Invalid search_type '{search_type}', defaulting to 'documents'")
             search_type = 'documents'
         
-        results = self.collections[search_type].query(
-            query_embeddings=[query_embedding.tolist()],
-            n_results=limit * 2,  # Get more results to allow for Python filtering
-            where=filters if filters else None
-        )
+        collection = self.collections[search_type]
+        logger.info(f"📚 Using collection '{search_type}' with {collection.count()} documents")
+        logger.info(f"🔍 ChromaDB query parameters: n_results={limit}, filters={filters}")
         
-        # Apply Python-side date range filtering if needed
-        if start_date and end_date:
-            try:
-                start_ts = datetime.fromisoformat(start_date).timestamp()
-                end_ts = datetime.fromisoformat(end_date).timestamp()
-                
-                filtered_docs = []
-                filtered_metadatas = []
-                filtered_distances = []
-                
-                if results['documents'] and results['documents'][0]:
-                    for i, metadata in enumerate(results['metadatas'][0]):
-                        created_at_ts = metadata.get('created_at_ts')
-                        if (created_at_ts is not None and 
-                            start_ts <= created_at_ts <= end_ts):
-                            filtered_docs.append(results['documents'][0][i])
-                            filtered_metadatas.append(metadata)
-                            filtered_distances.append(results['distances'][0][i])
-                
-                # Rebuild results with filtered data
-                results = {
-                    'documents': [filtered_docs[:limit]],
-                    'metadatas': [filtered_metadatas[:limit]],
-                    'distances': [filtered_distances[:limit]]
-                }
-            except ValueError:
-                # If date parsing fails, return original results
-                pass
+        try:
+            results = collection.query(
+                query_embeddings=[query_embedding.tolist()],
+                n_results=limit,
+                where=filters if filters else None
+            )
+            logger.info(f"✅ ChromaDB query completed:")
+            logger.info(f"   - documents: {len(results.get('documents', []))} batches")
+            if results.get('documents'):
+                logger.info(f"   - documents[0]: {len(results['documents'][0])} items")
+            logger.info(f"   - metadatas: {len(results.get('metadatas', []))} batches")
+            if results.get('metadatas'):
+                logger.info(f"   - metadatas[0]: {len(results['metadatas'][0])} items")
+        except Exception as query_e:
+            logger.error(f"❌ ChromaDB query failed: {query_e}")
+            raise
         
-        return self._format_results(results, 'temporal_search')
+        # Date filtering in Python is no longer the primary method for range queries
+        # but can serve as a fallback or for complex logic not supported by ChromaDB
+        # The main filtering is now done in the 'where' clause.
+        
+        logger.info(f"📝 Formatting {len(results.get('documents', [[]])[0])} results...")
+        formatted_results = self._format_results(results, 'temporal_search')
+        logger.info(f"✅ temporal_search completed: returning {len(formatted_results)} formatted results")
+        
+        return formatted_results
     
     def _format_results(self, results: Dict, search_type: str) -> List[Dict]:
         """Format search results consistently."""

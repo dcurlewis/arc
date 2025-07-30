@@ -265,12 +265,15 @@ class ContentIngestor:
         """Create entity node in Neo4j."""
         with self.db_manager.neo4j.session() as session:
             entity_type = self._get_entity_type(entity['label'])
-            node_id = self._generate_node_id(entity['text'], entity_type)
+            
+            # Use canonical name for ID generation to ensure consistent entity resolution
+            canonical_name = entity.get('canonical_name', entity['text'])
+            node_id = self._generate_node_id(canonical_name, entity_type)
             
             properties = {
                 'id': node_id,
                 'name': entity['text'],
-                'canonical_name': entity.get('canonical_name', entity['text']),
+                'canonical_name': canonical_name,
                 'entity_type': entity['label'],
                 'created_at': metadata['created_at'],
                 'modified_at': metadata['modified_at'],
@@ -305,26 +308,40 @@ class ContentIngestor:
     def _create_relationship(self, relationship: Dict[str, Any]) -> bool:
         """Create relationship between entities."""
         with self.db_manager.neo4j.session() as session:
-            source_id = self._generate_node_id(relationship['source'], 'Person')
-            target_id = self._generate_node_id(relationship['target'], 'Person')
+            # Use canonical names if available for consistent entity resolution
+            source_name = relationship.get('source_canonical', relationship['source'])
+            target_name = relationship.get('target_canonical', relationship['target'])
+            
+            source_id = self._generate_node_id(source_name, 'Person')
+            target_id = self._generate_node_id(target_name, 'Person')
             rel_type = relationship['type']
             properties = relationship.get('properties', {})
             
-            properties.update({
-                'created_at': datetime.now().isoformat(),
-                'confidence': properties.get('confidence', 1.0)
-            })
+            # Prepare properties for MERGE
+            confidence = properties.get('confidence', 1.0)
+            source_file = properties.get('source_file', '')
             
             query = f"""
             MATCH (a {{id: $source_id}})
             MATCH (b {{id: $target_id}})
             MERGE (a)-[r:{rel_type}]->(b)
-            SET r += $properties, r.updated_at = datetime()
+            ON CREATE SET 
+                r.created_at = datetime(),
+                r.confidence = $confidence,
+                r.source_file = $source_file
+            ON MATCH SET 
+                r.updated_at = datetime(),
+                r.confidence = CASE WHEN $confidence > r.confidence THEN $confidence ELSE r.confidence END
             RETURN r
             """
             
             try:
-                result = session.run(query, source_id=source_id, target_id=target_id, properties=properties)
+                result = session.run(query, 
+                    source_id=source_id, 
+                    target_id=target_id, 
+                    confidence=confidence,
+                    source_file=source_file
+                )
                 return result.single() is not None
             except Exception as e:
                 logger.error(f"Failed to create relationship: {e}")

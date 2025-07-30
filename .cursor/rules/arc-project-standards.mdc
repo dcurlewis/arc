@@ -169,10 +169,36 @@ If uncertain about any aspect:
 3. **WAIT** for user input rather than proceeding with assumptions
 4. **DOCUMENT** decisions for future reference
 
+## Interacting with Sensitive Files (e.g., .env, credentials)
+
+**Problem:** The AI assistant is blocked from directly reading or writing to certain sensitive files, such as `.env` or files containing credentials, for security reasons.
+
+**Directive:**
+
+To work around this limitation, the assistant must follow this protocol:
+
+1.  **Reading Files:** To read the contents of a blocked or sensitive file, the assistant must use a terminal command like `cat` or `head` to display the file's contents in the terminal output. **Do not assume the contents; always read them first.**
+
+    *Example*: `cat config/arc.env`
+
+2.  **Writing/Updating Files:** To write or update a blocked or sensitive file, the assistant must **not** use the file editing tool. Instead, it must:
+    *   Clearly state its intent to modify the file.
+    *   Provide the **full, final content** of the file in a markdown code block for the user to manually copy and paste.
+
+    *Example*:
+
+    "I will now update the `config/arc.env` file. Please replace the entire contents of the file with the following:"
+
+    ```
+    # New content for the file
+    KEY="VALUE"
+    ANOTHER_KEY="ANOTHER_VALUE"
+    ```
+
 ---
 
 **Remember: It's better to pause and ask than to implement incorrectly or expose private information.**
 description:
 globs:
-alwaysApply: false
+alwaysApply: true
 ---

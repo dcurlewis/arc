@@ -38,8 +38,24 @@ from enhanced_mcp_tools import get_content_ingestor
 
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+# Ensure dedicated logs directory exists
+LOG_DIR = Path(__file__).parent.parent / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "arc_mcp_server.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Console output
+        logging.FileHandler(LOG_FILE, mode='a')  # File output
+    ]
+)
 logger = logging.getLogger("arc-mcp-server")
+
+# Also configure enhanced_embeddings logger
+enhanced_logger = logging.getLogger("enhanced_embeddings")
+enhanced_logger.setLevel(logging.INFO)
 
 # Initialize server
 server = Server("arc-knowledge-graph")
@@ -640,20 +656,44 @@ async def _search_entities(args: Dict[str, Any]) -> List[TextContent]:
     entity_types = args.get("entity_types", [])
     limit = args.get("limit", 10)
     
+    # Ensure we have a database manager
+    current_db_manager = db_manager if db_manager else get_db_manager()
+    
     # Build Cypher query
     where_clause = "WHERE toLower(n.name) CONTAINS toLower($search_term)"
     if entity_types:
-        labels_clause = " OR ".join([f"n:{label}" for label in entity_types])
+        # Map common entity type inputs to actual Neo4j labels
+        label_mapping = {
+            "PERSON": "Person",
+            "ORG": "Organization", 
+            "ORGANIZATION": "Organization",
+            "DOC": "Document",
+            "DOCUMENT": "Document",
+            "DATE": "Date",
+            "TIME": "Time",
+            "LOCATION": "Location",
+            "PRODUCT": "Product",
+            "EVENT": "Event",
+            "CONCEPT": "Concept"
+        }
+        
+        # Convert input types to correct Neo4j labels
+        mapped_types = []
+        for entity_type in entity_types:
+            mapped_type = label_mapping.get(entity_type.upper(), entity_type)
+            mapped_types.append(mapped_type)
+        
+        labels_clause = " OR ".join([f"n:{label}" for label in mapped_types])
         where_clause += f" AND ({labels_clause})"
     
     cypher = f"""
         MATCH (n)
         {where_clause}
-        RETURN n.name as name, labels(n) as types, n.description as description
+        RETURN n.name as name, labels(n) as types, n.canonical_name as canonical_name, n.confidence as confidence
         LIMIT $limit
     """
     
-    with db_manager.neo4j.session() as session:
+    with current_db_manager.neo4j.session() as session:
         result = session.run(cypher, search_term=query, limit=limit)
         entities = []
         
@@ -661,14 +701,16 @@ async def _search_entities(args: Dict[str, Any]) -> List[TextContent]:
             entities.append({
                 "name": record["name"],
                 "types": record["types"], 
-                "description": record["description"]
+                "canonical_name": record["canonical_name"],
+                "confidence": record["confidence"]
             })
     
     return [TextContent(
         type="text", 
         text=f"Found {len(entities)} entities:\n\n" + 
              "\n".join([f"• **{e['name']}** ({', '.join(e['types'])})" + 
-                       (f": {e['description']}" if e['description'] else "")
+                       (f" → {e['canonical_name']}" if e['canonical_name'] and e['canonical_name'] != e['name'] else "") +
+                       (f" (confidence: {e['confidence']:.2f})" if e['confidence'] else "")
                        for e in entities])
     )]
 
@@ -818,7 +860,19 @@ async def _get_document(args: Dict[str, Any]) -> List[TextContent]:
     try:
         collection = db_manager.chromadb.get_collection(collection_name)
         
-        results = collection.get(ids=[document_id])
+        # If document_id looks like a filename, search by file_name metadata
+        if document_id.endswith('.md') or '/' in document_id:
+            # Search by metadata file_name
+            results = collection.get(
+                where={"file_name": document_id}
+            )
+        else:
+            # Try direct ID lookup first
+            results = collection.get(ids=[document_id])
+            
+            # If not found and doesn't have doc_ prefix, try with prefix
+            if not results["documents"] and not document_id.startswith("doc_"):
+                results = collection.get(ids=[f"doc_{document_id}"])
         
         if not results["documents"]:
             return [TextContent(type="text", text=f"Document not found: {document_id}")]
@@ -827,8 +881,8 @@ async def _get_document(args: Dict[str, Any]) -> List[TextContent]:
         metadata = results["metadatas"][0] if results["metadatas"] else {}
         
         doc_text = f"**Document:** {document_id}\n"
-        if metadata.get("file_path"):
-            doc_text += f"**Source:** {metadata['file_path']}\n"
+        if metadata.get("file_name"):
+            doc_text += f"**Source:** {metadata['file_name']}\n"
         if metadata.get("created_at"):
             doc_text += f"**Created:** {metadata['created_at']}\n"
         
@@ -1222,10 +1276,26 @@ async def _enhanced_temporal_search(args: Dict[str, Any]) -> List[TextContent]:
     search_type = args.get("search_type", "documents")
     limit = args.get("limit", 10)
     
+    logger.info(f"🔍 Enhanced temporal search called:")
+    logger.info(f"   - query: {query}")
+    logger.info(f"   - start_date: {start_date}")
+    logger.info(f"   - end_date: {end_date}")
+    logger.info(f"   - search_type: {search_type}")
+    logger.info(f"   - limit: {limit}")
+    
     try:
+        # Check global state
+        logger.info(f"🔧 Checking global state:")
+        logger.info(f"   - enhanced_query_interface type: {type(enhanced_query_interface) if enhanced_query_interface else 'None'}")
+        logger.info(f"   - enhanced_query_interface is None: {enhanced_query_interface is None}")
+        
         if enhanced_query_interface is None:
+            logger.error("❌ Enhanced query interface not initialized")
             return [TextContent(type="text", text="Enhanced query interface not initialized")]
         
+        logger.info("✅ Enhanced query interface is available, calling temporal_search...")
+        
+        # Call the temporal search method
         results = enhanced_query_interface.temporal_search(
             query=query,
             start_date=start_date,
@@ -1233,6 +1303,19 @@ async def _enhanced_temporal_search(args: Dict[str, Any]) -> List[TextContent]:
             search_type=search_type,
             limit=limit
         )
+        
+        logger.info(f"📊 Temporal search completed:")
+        logger.info(f"   - Results returned: {len(results)}")
+        logger.info(f"   - Results type: {type(results)}")
+        
+        if results:
+            logger.info(f"   - Sample result keys: {list(results[0].keys()) if results else 'No results'}")
+            for i, result in enumerate(results[:3]):  # Log first 3 results
+                metadata = result.get('metadata', {})
+                file_name = metadata.get('file_name', 'Unknown')
+                created_at = metadata.get('created_at_iso', 'Unknown')
+                score = result.get('score', 'Unknown')
+                logger.info(f"     Result {i+1}: {file_name} (created: {created_at}, score: {score})")
         
         if not results:
             date_range = ""
@@ -1243,8 +1326,11 @@ async def _enhanced_temporal_search(args: Dict[str, Any]) -> List[TextContent]:
             elif end_date:
                 date_range = f" before {end_date}"
             
+            logger.warning(f"⚠️ No results found for temporal search: '{query}'{date_range}")
             return [TextContent(type="text", text=f"No results found for temporal search: '{query}'{date_range}")]
         
+        # Format results for MCP response
+        logger.info("📝 Formatting results for MCP response...")
         search_text = f"**Enhanced Temporal Search for:** {query}\n\n"
         if start_date:
             search_text += f"*Start Date:* {start_date}\n"
@@ -1271,9 +1357,14 @@ async def _enhanced_temporal_search(args: Dict[str, Any]) -> List[TextContent]:
             search_text += f"{content}\n\n"
             search_text += "---\n\n"
         
+        logger.info(f"✅ MCP response formatted successfully ({len(search_text)} characters)")
         return [TextContent(type="text", text=search_text)]
         
     except Exception as e:
+        logger.error(f"💥 Enhanced temporal search error: {str(e)}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return [TextContent(type="text", text=f"Enhanced temporal search error: {str(e)}")]
 
 
@@ -1425,17 +1516,76 @@ async def main():
     """Main entry point for the ARC MCP server."""
     global db_manager, enhanced_query_interface
     
+    logger.info("🚀 Starting ARC MCP Server initialization...")
+    logger.info(f"📝 Logs are being written to: {LOG_FILE}")
+    logger.info(f"🔧 To monitor logs in real-time: tail -f {LOG_FILE}")
+    
     # Initialize database manager
     try:
+        logger.info("📊 Initializing database manager...")
         config = get_config()
+        logger.info(f"✅ Config loaded: {type(config)}")
+        
         db_manager = get_db_manager()
+        logger.info(f"✅ Database manager created: {type(db_manager)}")
+        
+        # Test database connectivity
+        try:
+            collections = db_manager.chromadb.list_collections()
+            logger.info(f"📚 ChromaDB connected: {len(collections)} collections available")
+            for col in collections:
+                count = col.count()
+                logger.info(f"   - {col.name}: {count} documents")
+        except Exception as db_test_e:
+            logger.warning(f"⚠️ ChromaDB connectivity test failed: {db_test_e}")
         
         # Initialize enhanced embedding system
-        embedding_generator, enhanced_query_interface = create_enhanced_embedding_system(db_manager)
+        logger.info("🧠 Creating enhanced embedding system...")
+        try:
+            embedding_generator, enhanced_query_interface = create_enhanced_embedding_system(db_manager)
+            logger.info(f"✅ Enhanced embedding generator created: {type(embedding_generator)}")
+            logger.info(f"✅ Enhanced query interface created: {type(enhanced_query_interface)}")
+            
+            # Test the enhanced system
+            if enhanced_query_interface:
+                logger.info("🔍 Testing enhanced query interface...")
+                test_collections = enhanced_query_interface.collections
+                logger.info(f"📋 Enhanced collections available: {list(test_collections.keys())}")
+                for name, collection in test_collections.items():
+                    try:
+                        count = collection.count()
+                        logger.info(f"   - {name}: {count} documents")
+                    except Exception as col_test_e:
+                        logger.warning(f"   - {name}: Error accessing collection: {col_test_e}")
+                
+                # Test temporal search functionality
+                logger.info("🧪 Testing temporal search functionality...")
+                try:
+                    test_results = enhanced_query_interface.temporal_search(
+                        query="test",
+                        start_date="2025-01-01",
+                        end_date="2025-12-31",
+                        search_type="documents",
+                        limit=1
+                    )
+                    logger.info(f"✅ Temporal search test successful: {len(test_results)} results")
+                except Exception as test_e:
+                    logger.error(f"❌ Temporal search test failed: {test_e}")
+            else:
+                logger.error("❌ Enhanced query interface is None after creation!")
+                
+        except Exception as enhanced_e:
+            logger.error(f"❌ Enhanced embedding system creation failed: {enhanced_e}")
+            logger.error(f"Exception details: {type(enhanced_e).__name__}: {str(enhanced_e)}")
+            raise
         
-        logger.info("ARC MCP Server initialized successfully with enhanced embeddings")
+        logger.info("🎉 ARC MCP Server initialized successfully with enhanced embeddings")
+        logger.info(f"🔧 Final state check:")
+        logger.info(f"   - db_manager: {type(db_manager) if db_manager else 'None'}")
+        logger.info(f"   - enhanced_query_interface: {type(enhanced_query_interface) if enhanced_query_interface else 'None'}")
         
         # Run the server
+        logger.info("🌐 Starting MCP server...")
         async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
             await server.run(
                 read_stream,
@@ -1444,7 +1594,10 @@ async def main():
             )
             
     except Exception as e:
-        logger.error(f"Failed to start ARC MCP server: {str(e)}")
+        logger.error(f"💥 Failed to start ARC MCP server: {str(e)}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise
 
 
